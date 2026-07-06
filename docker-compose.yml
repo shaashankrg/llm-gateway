@@ -1,0 +1,15 @@
+services:
+  llm-gateway:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      GATEWAY_API_KEY: ${GATEWAY_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+  
