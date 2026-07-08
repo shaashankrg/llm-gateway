@@ -19,8 +19,14 @@ def to_anthropic_request(std_req: StandardRequest) -> dict:
 
 
 def from_anthropic_response(raw: dict) -> StandardResponse:
+    # claude-sonnet-5 uses adaptive thinking by default, which puts a "thinking"
+    # block before the "text" block — content[0] isn't reliably the text block.
+    text_block = next((block for block in raw["content"] if block["type"] == "text"), None)
+    if text_block is None:
+        raise ValueError(f"No text block in Anthropic response (stop_reason={raw.get('stop_reason')})")
+
     return StandardResponse(
-        text=raw["content"][0]["text"],  # array of blocks, not a flat string
+        text=text_block["text"],
         model=raw["model"],
         input_tokens=raw["usage"]["input_tokens"],
         output_tokens=raw["usage"]["output_tokens"],

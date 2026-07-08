@@ -2,7 +2,7 @@ from fastapi import Header, HTTPException
 
 # Stand-in for a real database — a hardcoded config for now
 TEAM_CONFIG = {
-    "team-a-key": {"team_id": "team-a", "allowed_models": ["gpt-4", "claude-3-5-sonnet-20241022"]},
+    "team-a-key": {"team_id": "team-a", "allowed_models": ["gpt-4", "gpt-4o-mini", "claude-sonnet-5"]},
     "team-b-key": {"team_id": "team-b", "allowed_models": ["gpt-4"]},
 }
 

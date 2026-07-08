@@ -1,21 +1,18 @@
 import asyncio
 from contextlib import asynccontextmanager
 
+import httpx
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from starlette.background import BackgroundTask
 
+from app.auth import get_priority
 from app.budget import TEAM_BUDGETS, calculate_cost, record_spend_and_check_budget
 from app.models import StandardRequest, StandardResponse
-from app.queue import start_workers
+from app.queue import enqueue_request, start_workers
 from app.rate_limit import check_rate_limit
-from app.providers.anthropic_provider import (
-    call_anthropic,
-    from_anthropic_response,
-    stream_anthropic,
-    to_anthropic_request,
-)
-from app.providers.openai_provider import call_openai, from_openai_response, stream_openai, to_openai_request
+from app.providers.anthropic_provider import stream_anthropic, to_anthropic_request
+from app.providers.openai_provider import stream_openai, to_openai_request
 
 background_tasks = set()
 
@@ -37,16 +34,25 @@ async def healthz():
 
 
 @app.post("/generate", response_model=StandardResponse)
-async def generate(req: StandardRequest, team: dict = Depends(check_rate_limit)):
+async def generate(
+    req: StandardRequest,
+    team: dict = Depends(check_rate_limit),
+    priority: str = Depends(get_priority),
+):
     if req.model not in team["allowed_models"]:
         raise HTTPException(status_code=403, detail=f"Model {req.model} not allowed for this team")
-    
-    if "claude" in req.model:
-        raw = await call_anthropic(to_anthropic_request(req))
-        result = from_anthropic_response(raw)
-    else:
-        raw = await call_openai(to_openai_request(req))
-        result = from_openai_response(raw)
+
+    future = asyncio.get_running_loop().create_future()
+    await enqueue_request(priority, {"req": req, "future": future})
+    try:
+        result = await future
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Upstream provider error: {e.response.status_code} {e.response.reason_phrase}",
+        )
+    except httpx.HTTPError as e:
+        raise HTTPException(status_code=503, detail=f"Upstream provider unavailable: {e}")
 
     cost = calculate_cost(result.model, result.input_tokens, result.output_tokens)
     daily_budget = TEAM_BUDGETS.get(team["team_id"], 1.00)
@@ -91,8 +97,6 @@ async def generate_stream(req: StandardRequest, team: dict = Depends(check_rate_
     background = BackgroundTask(_finalize_stream_cost, usage_holder, team["team_id"], req.model)
     return StreamingResponse(generator, media_type="text/plain", background=background)
 
-
-from app.auth import get_priority
 
 @app.get("/test-priority")
 def test_priority(priority: str = Depends(get_priority)):
