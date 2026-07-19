@@ -8,6 +8,8 @@ from starlette.background import BackgroundTask
 
 from app.auth import get_priority
 from app.budget import TEAM_BUDGETS, calculate_cost, record_spend_and_check_budget
+from app.circuit_breaker import CircuitOpenError
+from app.health import health_check_loop
 from app.models import StandardRequest, StandardResponse
 from app.queue import enqueue_request, start_workers
 from app.rate_limit import check_rate_limit
@@ -19,9 +21,10 @@ background_tasks = set()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    task = asyncio.create_task(start_workers(4))
-    background_tasks.add(task)
-    task.add_done_callback(background_tasks.discard)
+    for coro in (start_workers(4), health_check_loop()):
+        task = asyncio.create_task(coro)
+        background_tasks.add(task)
+        task.add_done_callback(background_tasks.discard)
     yield
 
 
@@ -43,7 +46,7 @@ async def generate(
         raise HTTPException(status_code=403, detail=f"Model {req.model} not allowed for this team")
 
     future = asyncio.get_running_loop().create_future()
-    await enqueue_request(priority, {"req": req, "future": future})
+    await enqueue_request(priority, {"req": req, "team": team, "future": future})
     try:
         result = await future
     except httpx.HTTPStatusError as e:
@@ -53,6 +56,8 @@ async def generate(
         )
     except httpx.HTTPError as e:
         raise HTTPException(status_code=503, detail=f"Upstream provider unavailable: {e}")
+    except CircuitOpenError as e:
+        raise HTTPException(status_code=503, detail=str(e))
 
     cost = calculate_cost(result.model, result.input_tokens, result.output_tokens)
     daily_budget = TEAM_BUDGETS.get(team["team_id"], 1.00)
