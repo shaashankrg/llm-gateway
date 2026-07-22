@@ -1,17 +1,19 @@
 from fastapi import Header, HTTPException
 
+from app.tracing import tracer
+
 # Stand-in for a real database — a hardcoded config for now
 TEAM_CONFIG = {
-    "team-a-key": {"team_id": "team-a", "allowed_models": ["gpt-4", "gpt-4o-mini", "claude-sonnet-5"]},
-    "team-b-key": {"team_id": "team-b", "allowed_models": ["gpt-4"]},
+    "team-a-key": {"team_id": "team-a", "allowed_models": ["gpt-4", "claude-sonnet-5"]},
 }
 
 
 def get_team(x_api_key: str = Header(...)) -> dict:
-    team = TEAM_CONFIG.get(x_api_key)
-    if not team:
-        raise HTTPException(status_code=401, detail="Invalid API key")
-    return team
+    with tracer.start_as_current_span("auth_check"):
+        team = TEAM_CONFIG.get(x_api_key)
+        if not team:
+            raise HTTPException(status_code=401, detail="Invalid API key")
+        return team
 
 def get_priority(x_priority: str = Header("realtime")):
     if x_priority not in ("realtime", "batch"):

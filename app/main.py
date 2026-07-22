@@ -4,7 +4,10 @@ from contextlib import asynccontextmanager
 import httpx
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
+from opentelemetry import context as otel_context
+from prometheus_client import make_wsgi_app
 from starlette.background import BackgroundTask
+from starlette.middleware.wsgi import WSGIMiddleware
 
 from app.auth import get_priority
 from app.budget import TEAM_BUDGETS, calculate_cost, record_spend_and_check_budget
@@ -13,6 +16,7 @@ from app.health import health_check_loop
 from app.models import StandardRequest, StandardResponse
 from app.queue import enqueue_request, start_workers
 from app.rate_limit import check_rate_limit
+from app.tracing import tracer
 from app.providers.anthropic_provider import stream_anthropic, to_anthropic_request
 from app.providers.openai_provider import stream_openai, to_openai_request
 
@@ -29,6 +33,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="LLM Gateway", lifespan=lifespan)
+app.mount("/metrics", WSGIMiddleware(make_wsgi_app()))
 
 
 @app.get("/healthz")
@@ -42,28 +47,36 @@ async def generate(
     team: dict = Depends(check_rate_limit),
     priority: str = Depends(get_priority),
 ):
-    if req.model not in team["allowed_models"]:
-        raise HTTPException(status_code=403, detail=f"Model {req.model} not allowed for this team")
+    with tracer.start_as_current_span("generate_request") as span:
+        span.set_attribute("team_id", team["team_id"])
+        span.set_attribute("model", req.model)
+        span.set_attribute("priority", priority)
 
-    future = asyncio.get_running_loop().create_future()
-    await enqueue_request(priority, {"req": req, "team": team, "future": future})
-    try:
-        result = await future
-    except httpx.HTTPStatusError as e:
-        raise HTTPException(
-            status_code=502,
-            detail=f"Upstream provider error: {e.response.status_code} {e.response.reason_phrase}",
+        if req.model not in team["allowed_models"]:
+            raise HTTPException(status_code=403, detail=f"Model {req.model} not allowed for this team")
+
+        trace_context = otel_context.get_current()
+        future = asyncio.get_running_loop().create_future()
+        await enqueue_request(
+            priority, {"req": req, "team": team, "future": future, "trace_context": trace_context}
         )
-    except httpx.HTTPError as e:
-        raise HTTPException(status_code=503, detail=f"Upstream provider unavailable: {e}")
-    except CircuitOpenError as e:
-        raise HTTPException(status_code=503, detail=str(e))
+        try:
+            result = await future
+        except httpx.HTTPStatusError as e:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Upstream provider error: {e.response.status_code} {e.response.reason_phrase}",
+            )
+        except httpx.HTTPError as e:
+            raise HTTPException(status_code=503, detail=f"Upstream provider unavailable: {e}")
+        except CircuitOpenError as e:
+            raise HTTPException(status_code=503, detail=str(e))
 
-    cost = calculate_cost(result.model, result.input_tokens, result.output_tokens)
-    daily_budget = TEAM_BUDGETS.get(team["team_id"], 1.00)
-    record_spend_and_check_budget(team["team_id"], cost, daily_budget)
+        cost = calculate_cost(result.model, result.input_tokens, result.output_tokens)
+        daily_budget = TEAM_BUDGETS.get(team["team_id"], 1.00)
+        record_spend_and_check_budget(team["team_id"], cost, daily_budget)
 
-    return result
+        return result
 
 
 def _finalize_stream_cost(usage_holder: dict, team_id: str, model: str) -> None:

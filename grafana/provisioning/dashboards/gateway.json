@@ -1,0 +1,114 @@
+{
+  "title": "LLM Gateway",
+  "uid": "llm-gateway",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "5s",
+  "time": { "from": "now-15m", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Requests/sec",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(gateway_requests_total[1m])) by (outcome)",
+          "legendFormat": "{{outcome}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Error rate",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(gateway_errors_total[1m])) by (provider, error_type)",
+          "legendFormat": "{{provider}} / {{error_type}}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Request latency (P50/P95/P99)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(gateway_request_duration_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p50"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(gateway_request_duration_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p95"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(gateway_request_duration_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p99"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Provider call latency (P50/P95/P99)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(gateway_provider_call_duration_seconds_bucket[5m])) by (le, provider))",
+          "legendFormat": "{{provider}} p50"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(gateway_provider_call_duration_seconds_bucket[5m])) by (le, provider))",
+          "legendFormat": "{{provider}} p95"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(gateway_provider_call_duration_seconds_bucket[5m])) by (le, provider))",
+          "legendFormat": "{{provider}} p99"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Fallback events",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(rate(gateway_fallback_triggered_total[5m])) by (from_provider, to_provider)",
+          "legendFormat": "{{from_provider}} -> {{to_provider}}"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Circuit breaker state",
+      "type": "state-timeline",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "closed" }, "1": { "text": "half_open" }, "2": { "text": "open" } } }
+          ]
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "gateway_circuit_breaker_state",
+          "legendFormat": "{{provider}}"
+        }
+      ]
+    }
+  ]
+}
