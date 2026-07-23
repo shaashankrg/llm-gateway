@@ -17,8 +17,12 @@ import time
 
 import httpx
 
+import os
+
 GATEWAY_URL = "http://localhost:8000"
-TOTAL_REQUESTS = 500
+# Overridable via env so scale_test.py can sweep concurrency levels without
+# editing this file — defaults to 500 for the standalone single-run case.
+TOTAL_REQUESTS = int(os.environ.get("LOAD_TEST_TOTAL_REQUESTS", "500"))
 # 55 teams * CAPACITY=10 (rate_limit.py) >= TOTAL_REQUESTS, so the rate
 # limiter doesn't bottleneck this — see the matching comment in app/auth.py.
 LOAD_TEST_KEYS = [f"load-test-key-{i}" for i in range(1, 56)]

@@ -88,6 +88,14 @@ async def _consume_anthropic_stream(response, usage_holder: dict):
 
 async def stream_anthropic(payload: dict, usage_holder: dict):
     if os.environ.get("MOCK_PROVIDERS") == "1":
+        # Same forced-failure mechanism as call_anthropic, mirrored here so
+        # tests can simulate a provider dying mid-stream (after the response
+        # starts but before usage_holder gets populated).
+        if await consume_forced_failure("anthropic"):
+            request = httpx.Request("POST", ANTHROPIC_URL)
+            response = httpx.Response(503, request=request, text="mock forced failure")
+            raise httpx.HTTPStatusError("mock forced failure", request=request, response=response)
+
         lines = anthropic_sse_lines(
             ["mock ", "anthropic ", "stream"], input_tokens=1, output_tokens=1
         )

@@ -1,3 +1,5 @@
+import os
+
 from opentelemetry import metrics, trace
 from opentelemetry.exporter.prometheus import PrometheusMetricReader
 from opentelemetry.metrics import Observation
@@ -11,9 +13,18 @@ from app.circuit_breaker import circuit_breakers, CircuitState
 trace.set_tracer_provider(TracerProvider())
 tracer = trace.get_tracer(__name__)
 
-trace.get_tracer_provider().add_span_processor(
-    BatchSpanProcessor(ConsoleSpanExporter())
-)
+# The ConsoleSpanExporter pretty-prints every span as multi-line JSON to
+# stdout. Under load that's the dominant cost: each /generate emits several
+# nested spans (auth, circuit-breaker, provider.call, retry.attempt, ...),
+# and the synchronous stdout writes serialize the event loop — measured at
+# ~90k log lines and ~2.5s p50 latency for 500 concurrent mock requests while
+# every container sat <1% CPU. Gated behind an env flag so the tracing output
+# is still available for debugging, but a load/throughput run can turn it off
+# to measure the gateway's actual routing capacity rather than logging I/O.
+if os.environ.get("DISABLE_CONSOLE_SPANS") != "1":
+    trace.get_tracer_provider().add_span_processor(
+        BatchSpanProcessor(ConsoleSpanExporter())
+    )
 
 _LATENCY_BUCKETS = (0.1, 0.25, 0.5, 1, 2, 3, 5, 7.5, 10, 15, 20, 30)
 
