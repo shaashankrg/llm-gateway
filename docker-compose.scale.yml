@@ -1,0 +1,35 @@
+# Horizontal scale-out overlay: 3 gateway replicas behind an nginx round-robin
+# proxy, all sharing the single redis instance so rate-limit/budget state is
+# global, not per-instance. Run with all three compose files so mock mode
+# (docker-compose.test.yml) and the base services are both in effect:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.test.yml \
+#       -f docker-compose.scale.yml up -d --build
+#
+# nginx is the only published entrypoint (host 8000 -> nginx 80 -> the 3
+# replicas' :8000). The base file maps host 8000 -> gateway:8000 directly;
+# this overlay removes that mapping from the gateway service (replicas can't
+# all bind the same host port) and moves 8000 to nginx.
+services:
+  llm-gateway:
+    ports: !reset []          # drop the base file's host:8000 mapping
+    environment:
+      # Pass through so a load run can disable per-span console logging on the
+      # replicas (see app/tracing.py) — without this the scale replicas would
+      # keep printing spans while a single-instance baseline had them off,
+      # making the comparison invalid.
+      DISABLE_CONSOLE_SPANS: ${DISABLE_CONSOLE_SPANS:-0}
+    deploy:
+      replicas: 3
+    # All replicas resolve "redis" to the same container via Docker DNS, so
+    # spend:/ratelimit: keys are shared — this is what the cross-instance
+    # quota-enforcement check actually verifies.
+
+  nginx:
+    image: nginx:1.27-alpine
+    depends_on:
+      - llm-gateway
+    ports:
+      - "8000:80"
+    volumes:
+      - ./nginx.scale.conf:/etc/nginx/nginx.conf:ro

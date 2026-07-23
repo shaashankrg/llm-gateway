@@ -1,7 +1,13 @@
+from pathlib import Path
+
 import redis.asyncio as redis
 from fastapi import HTTPException
 
 r = redis.Redis(host="redis", port=6379, decode_responses=True)
+
+# Same pattern as rate_limit.py: load Lua relative to this file, not CWD.
+_RESERVE_SCRIPT = r.register_script((Path(__file__).parent / "budget_reserve.lua").read_text())
+_RECONCILE_SCRIPT = r.register_script((Path(__file__).parent / "budget_reconcile.lua").read_text())
 
 # --- Piece 1: Pricing table ---
 MODEL_PRICING = {
@@ -51,3 +57,25 @@ async def record_spend_and_check_budget(team_id: str, cost: float, daily_budget:
         # In a real system: send this to Slack/logging instead of print()
 
     return new_total
+
+
+# --- Piece 4: Pre-flight reservation for streaming requests ---
+# Streaming can't know the real cost until the stream ends, but a team
+# already at/near budget shouldn't be allowed to start one. Reserve an
+# estimated max cost up front (checked atomically against spend + any
+# other in-flight reservations for the team), then reconcile against the
+# real usage once the stream closes (or fails/is cancelled).
+async def reserve_budget(team_id: str, estimated_cost: float, daily_budget: float) -> bool:
+    allowed = await _RESERVE_SCRIPT(
+        keys=[f"spend:{team_id}:daily", f"reserved:{team_id}:daily"],
+        args=[estimated_cost, daily_budget],
+    )
+    return bool(allowed)
+
+
+async def reconcile_budget(team_id: str, reserved_amount: float, actual_cost: float) -> float:
+    new_total = await _RECONCILE_SCRIPT(
+        keys=[f"spend:{team_id}:daily", f"reserved:{team_id}:daily"],
+        args=[reserved_amount, actual_cost],
+    )
+    return float(new_total)

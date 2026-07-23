@@ -76,6 +76,14 @@ async def _consume_openai_stream(response, usage_holder: dict):
 
 async def stream_openai(payload: dict, usage_holder: dict):
     if os.environ.get("MOCK_PROVIDERS") == "1":
+        # Same forced-failure mechanism as call_openai, mirrored here so
+        # tests can simulate a provider dying mid-stream (after the response
+        # starts but before usage_holder gets populated).
+        if await consume_forced_failure("openai"):
+            request = httpx.Request("POST", OPENAI_URL)
+            response = httpx.Response(503, request=request, text="mock forced failure")
+            raise httpx.HTTPStatusError("mock forced failure", request=request, response=response)
+
         lines = openai_sse_lines(["mock ", "openai ", "stream"], input_tokens=1, output_tokens=1)
         async with FakeStreamedResponse(lines) as response:
             response.raise_for_status()
