@@ -1,4 +1,5 @@
 import asyncio
+import os
 from contextlib import asynccontextmanager
 
 import httpx
@@ -23,9 +24,12 @@ from app.providers.openai_provider import stream_openai, to_openai_request
 background_tasks = set()
 
 
+NUM_WORKERS = int(os.environ.get("NUM_WORKERS", "4"))
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    for coro in (start_workers(4), health_check_loop()):
+    for coro in (start_workers(NUM_WORKERS), health_check_loop()):
         task = asyncio.create_task(coro)
         background_tasks.add(task)
         task.add_done_callback(background_tasks.discard)
@@ -74,12 +78,12 @@ async def generate(
 
         cost = calculate_cost(result.model, result.input_tokens, result.output_tokens)
         daily_budget = TEAM_BUDGETS.get(team["team_id"], 1.00)
-        record_spend_and_check_budget(team["team_id"], cost, daily_budget)
+        await record_spend_and_check_budget(team["team_id"], cost, daily_budget)
 
         return result
 
 
-def _finalize_stream_cost(usage_holder: dict, team_id: str, model: str) -> None:
+async def _finalize_stream_cost(usage_holder: dict, team_id: str, model: str) -> None:
     usage = usage_holder.get("usage")
     if not usage:
         print(f"WARNING: no usage data captured for team {team_id} model {model}; stream cost not recorded")
@@ -88,7 +92,7 @@ def _finalize_stream_cost(usage_holder: dict, team_id: str, model: str) -> None:
     cost = calculate_cost(model, usage["input_tokens"], usage["output_tokens"])
     daily_budget = TEAM_BUDGETS.get(team_id, 1.00)
     try:
-        record_spend_and_check_budget(team_id, cost, daily_budget)
+        await record_spend_and_check_budget(team_id, cost, daily_budget)
     except HTTPException as e:
         # The response has already been fully streamed to the client by the time
         # this runs — there's no HTTP status left to change. The best we can do

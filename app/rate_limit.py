@@ -1,7 +1,7 @@
 import time
 from pathlib import Path
 
-import redis
+import redis.asyncio as redis
 from fastapi import Depends, HTTPException
 
 from app.auth import get_team
@@ -18,9 +18,9 @@ CAPACITY = 10
 REFILL_RATE = 10 / 60  # 10 tokens per minute
 
 
-def check_rate_limit(team: dict = Depends(get_team)) -> dict:
+async def check_rate_limit(team: dict = Depends(get_team)) -> dict:
     key = f"ratelimit:{team['team_id']}"
-    allowed = RATE_LIMIT_SCRIPT(keys=[key], args=[CAPACITY, REFILL_RATE, time.time()])
+    allowed = await RATE_LIMIT_SCRIPT(keys=[key], args=[CAPACITY, REFILL_RATE, time.time()])
     if not allowed:
         raise HTTPException(
             status_code=429,

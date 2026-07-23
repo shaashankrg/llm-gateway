@@ -1,0 +1,14 @@
+services:
+  llm-gateway:
+    environment:
+      MOCK_PROVIDERS: "1"
+      NUM_WORKERS: "${NUM_WORKERS:-4}"
+
+  tests:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    depends_on:
+      - llm-gateway
+      - redis
+    command: pytest tests/ -v

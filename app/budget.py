@@ -1,4 +1,4 @@
-import redis
+import redis.asyncio as redis
 from fastapi import HTTPException
 
 r = redis.Redis(host="redis", port=6379, decode_responses=True)
@@ -9,7 +9,7 @@ MODEL_PRICING = {
         "input_price": 0.00003,
         "output_price": 0.00006,
     },
-    "claude-3-5-sonnet-20241022": {
+    "claude-sonnet-5": {
         "input_price": 0.00002,
         "output_price": 0.00005,
     },
@@ -30,14 +30,14 @@ def calculate_cost(model: str, input_tokens: int, output_tokens: int) -> float:
 
 
 # --- Piece 3: Record spend atomically, and check budget ---
-def record_spend_and_check_budget(team_id: str, cost: float, daily_budget: float) -> float:
+async def record_spend_and_check_budget(team_id: str, cost: float, daily_budget: float) -> float:
     key = f"spend:{team_id}:daily"
 
     # Atomic increment — same reasoning as the rate limiter's Lua script,
     # but here INCRBYFLOAT alone is enough since it's a single operation,
     # not a multi-step calculation like refill math was.
-    new_total = r.incrbyfloat(key, cost)
-    r.expire(key, 86400)  # resets roughly daily
+    new_total = await r.incrbyfloat(key, cost)
+    await r.expire(key, 86400)  # resets roughly daily
 
     percent_used = new_total / daily_budget
 
