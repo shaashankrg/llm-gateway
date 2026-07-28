@@ -1,24 +1,61 @@
 # LLM Gateway
 
-A production-shaped API gateway that sits between applications and LLM providers (OpenAI, Anthropic), handling the concerns a direct provider call leaves to you: authentication, per-team rate limiting, cost budgeting, retries, cross-provider failover, streaming, and observability.
+A self-hosted API gateway that sits between an organization's applications and its LLM providers (OpenAI, Anthropic) — the single chokepoint through which every model call flows.
 
-The interesting part isn't the feature list — it's that **every reliability claim below is backed by a test that measures it**, including a chaos test that fails a provider mid-flight and a horizontal scale-out test whose headline result was negative and is reported as such.
+### Why a team would deploy this
+
+When several services in a company call LLM providers directly, each one carries its own copy of the same hard problems, and the organization loses answers to questions it needs:
+
+| Without a gateway | What this gateway gives the team |
+|---|---|
+| **Provider outages take down features.** Every service needs its own retry and failover logic, so most ship without it. | One outage-handling implementation. When a provider fails, the *same in-flight request* re-routes to the other provider — measured at **~89% success through a 30-second outage**, recovering in ~5s. |
+| **Nobody can answer "what are we spending, and on what?"** until the invoice arrives. | Per-team daily budgets enforced in real time from actual token usage, with a hard cutoff before overspend rather than after. |
+| **One team's batch job starves everyone else's user-facing traffic** — they share a provider rate limit with no arbitration. | Per-team rate limiting plus a priority queue that puts `realtime` traffic ahead of `batch`. |
+| **API keys are copied into every service.** Rotation means chasing down every repo. | Provider credentials live in one place. Services authenticate to the gateway and are scoped to an allow-list of models. |
+| **Switching or adding a provider is a migration in every codebase.** | One provider-neutral schema. Adding a provider is a translation module, not a company-wide change. |
+| **Debugging "the LLM was slow" means guessing** — which service, which provider, queue wait or upstream latency? | Traces spanning the full request path and per-provider latency, error, and failover metrics on one dashboard. |
+
+In short: the reliability, cost control, and visibility that every service would otherwise reimplement badly get built once, correctly, and are enforced for everyone.
+
+**What makes this repo worth reading:** every reliability claim above is backed by a test that measures it — including a chaos test that fails a provider mid-flight, and a horizontal scale-out test whose headline result was *negative* and is reported as such rather than dressed up.
 
 ```
-                                    ┌──────────────────────────┐
-  client ──▶ nginx (round-robin) ──▶│  FastAPI gateway ×N      │
-                                    │                          │
-                                    │  auth ─▶ rate limit ─▶   │
-                                    │  budget ─▶ priority queue│──▶ worker pool
-                                    └──────────────────────────┘        │
-                                                 │                      │
-                                    ┌────────────▼──────────┐  ┌────────▼─────────┐
-                                    │ Redis (shared state)  │  │ circuit breaker  │
-                                    │ buckets · spend ·     │  │ retry + backoff  │
-                                    │ reservations          │  │ failover routing │
-                                    └───────────────────────┘  └────────┬─────────┘
-                                                                        │
-                                                          OpenAI ◀──────┴──────▶ Anthropic
+                            ┌─────────────┐
+                            │   clients   │  X-API-Key, X-Priority
+                            └──────┬──────┘
+                                   │
+                            ┌──────▼──────┐
+                            │    nginx    │  round-robin across replicas
+                            └──────┬──────┘
+                                   │
+        ┌──────────────────────────▼──────────────────────────┐
+        │              FastAPI gateway  (×3 replicas)         │
+        │                                                     │
+        │   ①  authenticate ──▶ ②  rate limit ──▶ ③  budget   │
+        │                                                     │
+        │                          ▼                          │
+        │            ④  priority queue (realtime > batch)     │
+        │                          ▼                          │
+        │            ⑤  worker pool ──▶ circuit breaker       │
+        │                              ──▶ retry + backoff    │
+        │                              ──▶ failover routing   │
+        └───────┬─────────────────────────────────────┬───────┘
+                │                                     │
+                │ shared state (steps ②③)             │ outbound calls (step ⑤)
+                │                                     │
+        ┌───────▼────────────────┐        ┌───────────▼───────────┐
+        │        Redis           │        │  OpenAI  ⇄  Anthropic │
+        │                        │        │                       │
+        │  token buckets         │        │  primary exhausts     │
+        │  daily spend           │        │  retries, same request│
+        │  budget reservations   │        │  completes on the     │
+        │                        │        │  other provider       │
+        │  one instance, shared  │        └───────────────────────┘
+        │  by all replicas, so   │
+        │  quotas stay global    │        ┌───────────────────────┐
+        └────────────────────────┘        │ Prometheus ─▶ Grafana │
+                                          │  traces · metrics     │
+                                          └───────────────────────┘
 ```
 
 ---
