@@ -342,6 +342,7 @@ tests/                     Integration suite (8 tests, real stack over HTTP)
 chaos_test.py              Outage injection, breaker + recovery + budget measurement
 scale_test.py              Throughput sweep + cross-instance quota verification
 load_test.py               Concurrency load generator
+scaling_test.py            Worker-pool sweep (NUM_WORKERS 4→32) over load_test.py
 docs/                      Chapter write-ups: observability, testing, load & chaos
 grafana/, prometheus.yml   Provisioned dashboard + scrape config
 docker-compose*.yml        Base stack, test overlay, 3-replica scale overlay

@@ -163,8 +163,3 @@ async def generate_stream(req: StandardRequest, team: dict = Depends(check_rate_
 
     tracked = _tracked_stream(generator, provider, usage_holder, team_id, req.model, estimated_cost)
     return StreamingResponse(tracked, media_type="text/plain")
-
-
-@app.get("/test-priority")
-def test_priority(priority: str = Depends(get_priority)):
-    return {"priority": priority}

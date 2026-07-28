@@ -1,8 +1,21 @@
+# Environments and secrets
 .venv/
-__pycache__/
-*.pyc
+venv/
 .env
+
+# Python build artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
 
 # Generated test output
 chaos_test_log.jsonl
 scale_test_results.jsonl
+
+# Scratch files for manual curl requests
+body.json
