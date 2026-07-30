@@ -1,0 +1,65 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    /* Anchored sections shouldn't hide under the top of the viewport. */
+    scroll-padding-top: 2rem;
+  }
+
+  body {
+    @apply bg-ink-950 text-slate-300 antialiased;
+    background-image:
+      radial-gradient(60rem 40rem at 20% -10%, rgba(45, 212, 191, 0.06), transparent 60%),
+      radial-gradient(50rem 30rem at 90% 5%, rgba(96, 165, 250, 0.045), transparent 60%);
+    background-attachment: fixed;
+  }
+
+  /* Numbers should always line up in columns. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
+  }
+
+  ::selection {
+    @apply bg-accent/25 text-slate-100;
+  }
+}
+
+@layer components {
+  .shell {
+    @apply mx-auto w-full max-w-6xl px-5 sm:px-8;
+  }
+
+  .card {
+    @apply rounded-lg border border-ink-700 bg-ink-900/70 backdrop-blur-sm;
+  }
+
+  /* Small uppercase monospace label used to head every section. */
+  .eyebrow {
+    @apply font-mono text-[0.7rem] uppercase tracking-[0.22em] text-accent/80;
+  }
+
+  .section-title {
+    @apply text-2xl font-semibold tracking-tight text-slate-100 sm:text-3xl;
+  }
+
+  .rule {
+    @apply h-px w-full bg-gradient-to-r from-ink-600 via-ink-700 to-transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
