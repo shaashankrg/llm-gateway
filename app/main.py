@@ -65,6 +65,25 @@ def _provider_for_model(model: str) -> str:
     return "anthropic" if "claude" in model else "openai"
 
 
+@app.get("/")
+async def root():
+    """Service index. Exists so hitting the bare host shows what's running
+    rather than a bare 404 — there's nothing to serve at / otherwise."""
+    return {
+        "service": "llm-gateway",
+        "status": "ok",
+        "endpoints": [
+            "/healthz",
+            "/metrics",
+            "/generate",
+            "/generate/stream",
+            "/demo/status",
+            "/demo/feed",
+            "/demo/chaos",
+        ],
+    }
+
+
 @app.get("/healthz")
 async def healthz():
     return {"status": "ok"}
