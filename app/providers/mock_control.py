@@ -1,6 +1,12 @@
+import os
+
 import redis.asyncio as redis
 
-_client = redis.Redis(host="redis", port=6379, decode_responses=True)
+# Same REDIS_URL override as app/rate_limit.py, so a hosted deployment points
+# at its managed Redis instead of the Compose service name.
+_client = redis.from_url(
+    os.environ.get("REDIS_URL", "redis://redis:6379"), decode_responses=True
+)
 
 # Only decrements if the key already exists — a test that never sets
 # mock:fail_count:<provider> must leave it completely untouched, so unrelated

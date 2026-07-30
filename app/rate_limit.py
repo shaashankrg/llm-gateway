@@ -1,3 +1,4 @@
+import os
 import time
 from pathlib import Path
 
@@ -6,7 +7,12 @@ from fastapi import Depends, HTTPException
 
 from app.auth import get_team
 
-r = redis.Redis(host="redis", port=6379, decode_responses=True)
+# REDIS_URL lets a hosted deployment point at a managed Redis (which is usually
+# a rediss:// URL with credentials). Defaults to the Compose service name so
+# local `docker compose up` keeps working with no env var set.
+r = redis.from_url(
+    os.environ.get("REDIS_URL", "redis://redis:6379"), decode_responses=True
+)
 
 # Load the token-bucket Lua script relative to this file, not the process CWD,
 # so it's found regardless of where uvicorn is launched from.

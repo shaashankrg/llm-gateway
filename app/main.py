@@ -1,9 +1,11 @@
 import asyncio
 import os
+import time
 from contextlib import asynccontextmanager
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from opentelemetry import context as otel_context
 from prometheus_client import make_wsgi_app
@@ -12,6 +14,7 @@ from starlette.middleware.wsgi import WSGIMiddleware
 from app.auth import get_priority
 from app.budget import TEAM_BUDGETS, calculate_cost, reconcile_budget, record_spend_and_check_budget, reserve_budget
 from app.circuit_breaker import CircuitOpenError, circuit_breakers
+from app.demo import record_event, router as demo_router
 from app.health import health_check_loop
 from app.models import StandardRequest, StandardResponse
 from app.queue import enqueue_request, start_workers
@@ -36,7 +39,30 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="LLM Gateway", lifespan=lifespan)
+
+# The showcase site calls this gateway from the browser on a different origin,
+# so those origins have to be allowed explicitly. CORS_ORIGINS is a
+# comma-separated list; localhost is included by default for local development.
+_DEFAULT_ORIGINS = "http://localhost:3000,http://127.0.0.1:3000"
+_origins = [
+    o.strip()
+    for o in os.environ.get("CORS_ORIGINS", _DEFAULT_ORIGINS).split(",")
+    if o.strip()
+]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_origins,
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type", "X-API-Key", "X-Priority", "X-Demo-Token"],
+)
+
 app.mount("/metrics", WSGIMiddleware(make_wsgi_app()))
+app.include_router(demo_router)
+
+
+def _provider_for_model(model: str) -> str:
+    """Same mapping the worker uses to pick a provider (see app/queue.py)."""
+    return "anthropic" if "claude" in model else "openai"
 
 
 @app.get("/healthz")
@@ -58,6 +84,20 @@ async def generate(
         if req.model not in team["allowed_models"]:
             raise HTTPException(status_code=403, detail=f"Model {req.model} not allowed for this team")
 
+        started = time.monotonic()
+
+        def _emit(status: int, model: str) -> None:
+            """Report this request to the demo feed. Never affects the response."""
+            record_event(
+                team=team["team_id"],
+                provider=_provider_for_model(model),
+                # The worker swaps in the fallback model when it reroutes, so a
+                # changed model is exactly what failover looks like from here.
+                failover=model != req.model,
+                latency_ms=(time.monotonic() - started) * 1000,
+                status=status,
+            )
+
         trace_context = otel_context.get_current()
         future = asyncio.get_running_loop().create_future()
         await enqueue_request(
@@ -66,19 +106,27 @@ async def generate(
         try:
             result = await future
         except httpx.HTTPStatusError as e:
+            _emit(502, req.model)
             raise HTTPException(
                 status_code=502,
                 detail=f"Upstream provider error: {e.response.status_code} {e.response.reason_phrase}",
             )
         except httpx.HTTPError as e:
+            _emit(503, req.model)
             raise HTTPException(status_code=503, detail=f"Upstream provider unavailable: {e}")
         except CircuitOpenError as e:
+            _emit(503, req.model)
             raise HTTPException(status_code=503, detail=str(e))
 
         cost = calculate_cost(result.model, result.input_tokens, result.output_tokens)
         daily_budget = TEAM_BUDGETS.get(team["team_id"], 1.00)
-        await record_spend_and_check_budget(team["team_id"], cost, daily_budget)
+        try:
+            await record_spend_and_check_budget(team["team_id"], cost, daily_budget)
+        except HTTPException as e:
+            _emit(e.status_code, result.model)
+            raise
 
+        _emit(200, result.model)
         return result
 
 

@@ -1,9 +1,13 @@
+import os
 from pathlib import Path
 
 import redis.asyncio as redis
 from fastapi import HTTPException
 
-r = redis.Redis(host="redis", port=6379, decode_responses=True)
+# Same REDIS_URL override as rate_limit.py — see the note there.
+r = redis.from_url(
+    os.environ.get("REDIS_URL", "redis://redis:6379"), decode_responses=True
+)
 
 # Same pattern as rate_limit.py: load Lua relative to this file, not CWD.
 _RESERVE_SCRIPT = r.register_script((Path(__file__).parent / "budget_reserve.lua").read_text())
