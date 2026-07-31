@@ -135,6 +135,50 @@ async def demo_feed(limit: int = 15, stream: int = 0):
     )
 
 
+class BurnRequest(BaseModel):
+    team: str = Field(default="team-b")
+    # Fraction of the team's daily cap to leave spent.
+    fraction: float = Field(default=0.97, ge=0.0, le=1.0)
+
+
+@router.post("/burn")
+async def demo_burn(body: BurnRequest, request: Request):
+    """
+    Push a team's daily spend to just under its cap.
+
+    The demo panel's budget bars otherwise sit near zero forever — a trickle
+    of mock traffic costs fractions of a cent against a $1-5 daily cap, so
+    budget enforcement, which is one of the more interesting behaviors here,
+    was invisible. Seeding the counter lets a visitor watch the next few
+    requests get rejected with a real 402 through the ordinary budget path,
+    rather than a special-cased demo branch.
+    """
+    if _DEMO_TOKEN and request.headers.get("X-Demo-Token") != _DEMO_TOKEN:
+        raise HTTPException(status_code=403, detail="Invalid demo token")
+
+    cap = TEAM_BUDGETS.get(body.team)
+    if cap is None:
+        raise HTTPException(status_code=400, detail=f"Unknown team: {body.team}")
+
+    target = round(cap * body.fraction, 6)
+    key = f"spend:{body.team}:daily"
+    # Mirrors how record_spend writes this key, including the rolling 24h TTL.
+    await r.set(key, target, ex=86400)
+
+    return {"ok": True, "team": body.team, "spend": target, "cap": cap}
+
+
+@router.post("/reset")
+async def demo_reset(request: Request):
+    """Clear demo spend so the panel returns to a clean state."""
+    if _DEMO_TOKEN and request.headers.get("X-Demo-Token") != _DEMO_TOKEN:
+        raise HTTPException(status_code=403, detail="Invalid demo token")
+
+    for team in TEAM_BUDGETS:
+        await r.delete(f"spend:{team}:daily")
+    return {"ok": True, "cleared": list(TEAM_BUDGETS)}
+
+
 class ChaosRequest(BaseModel):
     provider: str = Field(default="openai")
     duration_seconds: int = Field(default=30, ge=1, le=_MAX_CHAOS_SECONDS)
