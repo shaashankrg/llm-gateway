@@ -5,6 +5,10 @@ from app.tracing import tracer
 # Stand-in for a real database — a hardcoded config for now
 TEAM_CONFIG = {
     "team-a-key": {"team_id": "team-a", "allowed_models": ["gpt-4", "claude-sonnet-5", "gpt-4o-mini"]},
+    # team-b has a daily budget in app/budget.py and is charted by the demo
+    # panel, so it needs a key to be reachable at all. Deliberately narrower
+    # model access than team-a — it can't use gpt-4o-mini.
+    "team-b-key": {"team_id": "team-b", "allowed_models": ["gpt-4", "claude-sonnet-5"]},
 }
 
 # Separate keys/team_ids for the load test (load_test.py) — each team_id gets

@@ -20,8 +20,9 @@ import httpx
 
 GATEWAY = "https://llm-gateway-x18y.onrender.com"
 
-# Keys from app/auth.py. team-a and team-b are the two the panel charts.
-TEAMS = ["team-a-key", "team-b-key", "team-c-key"]
+# Keys from app/auth.py — these are the two teams the panel charts. Anything
+# else would 401 and never reach the feed.
+TEAMS = ["team-a-key", "team-b-key"]
 PROMPTS = [
     "Summarize circuit breakers in one line.",
     "What is a token bucket?",
