@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   BreakerState,
   BudgetRow,
+  burnBudget,
   FeedEvent,
   GatewaySnapshot,
   coerceEvents,
@@ -18,6 +19,31 @@ import {
 
 const MAX_ROWS = 15;
 const CHAOS_SECONDS = 30;
+
+/**
+ * One request every ~3s. Fast enough that the feed always looks alive, slow
+ * enough that rows are readable rather than blurring past — and it keeps the
+ * demo's footprint on the host trivial.
+ */
+const TRICKLE_MS = 3000;
+
+/**
+ * Running tally of what the visitor's own traffic did.
+ *
+ * The panel used to show only state — pills and scrolling rows — so someone
+ * could watch an entire outage and have no idea whether it went well. These
+ * are the numbers that turn it into an experiment with a result. The
+ * direct/failover split is the whole point: without it, successful failover
+ * is indistinguishable from nothing having gone wrong.
+ */
+type Tally = {
+  attempted: number;
+  direct: number;
+  viaFailover: number;
+  failed: number;
+};
+
+const EMPTY_TALLY: Tally = { attempted: 0, direct: 0, viaFailover: 0, failed: 0 };
 
 const BREAKER_STYLE: Record<BreakerState, { dot: string; text: string; ring: string; label: string }> = {
   closed: { dot: "bg-status-ok", text: "text-status-ok", ring: "border-status-ok/30 bg-status-ok/5", label: "closed" },
@@ -86,6 +112,51 @@ function FeedRow({ e, fresh }: { e: FeedEvent; fresh: boolean }) {
       <span className={`tabular text-right ${statusTone(e.status)}`}>{e.status}</span>
       <span className={`text-right ${statusTone(e.status)}`}>{statusGlyph(e.status)}</span>
     </li>
+  );
+}
+
+function Scoreboard({ tally, recoveryMs }: { tally: Tally; recoveryMs: number | null }) {
+  const settled = tally.direct + tally.viaFailover + tally.failed;
+  const rate = settled > 0 ? ((tally.direct + tally.viaFailover) / settled) * 100 : null;
+
+  return (
+    <dl className="grid grid-cols-2 gap-x-4 gap-y-3 rounded-md border border-ink-700 bg-ink-950/60 p-3.5 sm:grid-cols-4">
+      <div>
+        <dt className="font-mono text-[0.62rem] uppercase tracking-wider text-slate-600">Requests</dt>
+        <dd className="tabular mt-1 font-mono text-lg text-slate-200">{tally.attempted}</dd>
+      </div>
+
+      <div>
+        <dt className="font-mono text-[0.62rem] uppercase tracking-wider text-slate-600">Succeeded</dt>
+        <dd className="tabular mt-1 font-mono text-lg text-slate-200">
+          {tally.direct + tally.viaFailover}
+        </dd>
+        {/* The split is the proof: failover is invisible without it. */}
+        <dd className="mt-0.5 font-mono text-[0.6rem] leading-relaxed text-slate-600">
+          {tally.direct} direct ·{" "}
+          <span className={tally.viaFailover > 0 ? "text-status-warn" : ""}>
+            {tally.viaFailover} via failover
+          </span>
+        </dd>
+      </div>
+
+      <div>
+        <dt className="font-mono text-[0.62rem] uppercase tracking-wider text-slate-600">Success rate</dt>
+        <dd className="tabular mt-1 font-mono text-lg text-slate-200">
+          {rate === null ? "—" : `${rate.toFixed(1)}%`}
+        </dd>
+      </div>
+
+      <div>
+        <dt className="font-mono text-[0.62rem] uppercase tracking-wider text-slate-600">Recovery</dt>
+        <dd className="tabular mt-1 font-mono text-lg text-slate-200">
+          {recoveryMs === null ? "—" : `${(recoveryMs / 1000).toFixed(2)}s`}
+        </dd>
+        <dd className="mt-0.5 font-mono text-[0.6rem] text-slate-600">
+          {recoveryMs === null ? "outage end → breaker closed" : "breaker closed"}
+        </dd>
+      </div>
+    </dl>
   );
 }
 
@@ -159,7 +230,7 @@ function OfflineState({
                 aria-hidden="true"
               />
             )}
-            {waking ? "Waking it up… (~30s)" : "Wake it up (~30s)"}
+            {waking ? "Waking it up… (~30s)" : wakeFailed ? "Try again" : "Wake it up (~30s)"}
           </button>
           <p className="mt-2.5 font-mono text-[0.68rem] text-slate-600">
             {waking
@@ -241,6 +312,13 @@ export default function LiveDemo() {
   const [onScreen, setOnScreen] = useState(false);
   const [waking, setWaking] = useState(false);
   const [wakeFailed, setWakeFailed] = useState(false);
+  const [burnError, setBurnError] = useState<string | null>(null);
+  const [tally, setTally] = useState<Tally>(EMPTY_TALLY);
+  const [recoveryMs, setRecoveryMs] = useState<number | null>(null);
+  // Set the moment the outage window ends; cleared once the breaker closes.
+  const recoveryStartRef = useRef<number | null>(null);
+  // Guards the auto-wake so it fires at most once per page load.
+  const autoWokeRef = useRef(false);
 
   const freshestRef = useRef<string | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
@@ -273,6 +351,17 @@ export default function LiveDemo() {
     };
   }, [waking]);
 
+  // ── recovery clock: stops the moment the breaker is seen closed ────────
+  useEffect(() => {
+    if (recoveryStartRef.current === null) return;
+
+    const openai = snapshot.providers.find((p) => p.provider === "openai");
+    if (openai?.state === "closed") {
+      setRecoveryMs(Date.now() - recoveryStartRef.current);
+      recoveryStartRef.current = null;
+    }
+  }, [snapshot]);
+
   // ── request feed: SSE when available, polling otherwise ────────────────
   const pushEvents = useCallback((incoming: FeedEvent[]) => {
     if (!incoming.length) return;
@@ -280,6 +369,21 @@ export default function LiveDemo() {
       const seen = new Set(prev.map((e) => `${e.timestamp}|${e.team}|${e.status}`));
       const added = incoming.filter((e) => !seen.has(`${e.timestamp}|${e.team}|${e.status}`));
       if (!added.length) return prev;
+
+      // Count each event exactly once, here, where de-duplication already
+      // happened — tallying at the fetch site would double-count anything
+      // that arrives on both the SSE stream and a polling pass.
+      setTally((t) => {
+        const next = { ...t };
+        for (const e of added) {
+          next.attempted += 1;
+          const ok = Number(e.status) < 300;
+          if (!ok) next.failed += 1;
+          else if (e.failover) next.viaFailover += 1;
+          else next.direct += 1;
+        }
+        return next;
+      });
 
       // Newest first; the backend may hand us either order.
       const merged = [...added, ...prev].sort(
@@ -364,7 +468,7 @@ export default function LiveDemo() {
         await sendDemoRequest();
       }
       // Jittered so rows land unevenly, the way real traffic does.
-      if (!stopped) timer = setTimeout(loop, 900 + Math.random() * 900);
+      if (!stopped) timer = setTimeout(loop, TRICKLE_MS + Math.random() * 1000);
     };
 
     loop();
@@ -385,13 +489,29 @@ export default function LiveDemo() {
     const tick = () => {
       const left = Math.max(0, Math.ceil((chaosUntil - Date.now()) / 1000));
       setChaosLeft(left);
-      if (left === 0) setChaosUntil(null);
+      if (left === 0) {
+        setChaosUntil(null);
+        // Start the recovery clock at outage end. It stops when the breaker
+        // is next observed closed — the same definition the chaos test uses.
+        recoveryStartRef.current = Date.now();
+      }
     };
 
     tick();
     const id = setInterval(tick, 250);
     return () => clearInterval(id);
   }, [chaosUntil]);
+
+  const onBurn = async () => {
+    setBurnError(null);
+    const res = await burnBudget("team-b");
+    if (!res.ok) {
+      setBurnError(res.error ?? "Couldn't reach the gateway.");
+      return;
+    }
+    // Reflect it immediately rather than waiting for the next poll.
+    setSnapshot(await fetchSnapshot());
+  };
 
   const onWake = async () => {
     setWaking(true);
@@ -409,8 +529,27 @@ export default function LiveDemo() {
     setWaking(false);
   };
 
+  // Most visitors should never have to press the wake button: if the panel
+  // scrolls into view while the host is asleep, start booting it right away.
+  // The button stays for anyone whose automatic attempt timed out.
+  // Declared here so onWake is already in scope (const isn't hoisted).
+  useEffect(() => {
+    if (!onScreen || !offline || waking || wakeFailed) return;
+    if (snapshot.reason !== "unreachable") return;
+    if (autoWokeRef.current) return;
+
+    autoWokeRef.current = true;
+    onWake();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onScreen, offline, waking, wakeFailed, snapshot.reason]);
+
   const onChaos = async () => {
     setChaosError(null);
+    // Each outage is its own experiment — reset the scoreboard so the numbers
+    // describe this run rather than everything since the page loaded.
+    setTally(EMPTY_TALLY);
+    setRecoveryMs(null);
+    recoveryStartRef.current = null;
     // Optimistic so the button reacts immediately; rolled back if the call fails.
     setChaosUntil(Date.now() + CHAOS_SECONDS * 1000);
 
@@ -456,6 +595,18 @@ export default function LiveDemo() {
           <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem] lg:gap-8">
             {/* ── feed (first on desktop, second on mobile) ── */}
             <div className="order-2 lg:order-1">
+              <div className="mb-2.5 flex items-baseline justify-between">
+                <h3 className="font-mono text-[0.7rem] uppercase tracking-[0.18em] text-slate-500">
+                  this session
+                </h3>
+                <span className="font-mono text-[0.65rem] text-slate-600">
+                  {chaosActive ? "during outage" : "since page load"}
+                </span>
+              </div>
+              <div className="mb-5">
+                <Scoreboard tally={tally} recoveryMs={recoveryMs} />
+              </div>
+
               <div className="mb-2.5 flex items-baseline justify-between">
                 <h3 className="font-mono text-[0.7rem] uppercase tracking-[0.18em] text-slate-500">request feed</h3>
                 <span className="font-mono text-[0.65rem] text-slate-600">last {MAX_ROWS}</span>
@@ -526,9 +677,18 @@ export default function LiveDemo() {
               </div>
 
               <div>
-                <h3 className="mb-3 font-mono text-[0.7rem] uppercase tracking-[0.18em] text-slate-500">
-                  daily budgets
-                </h3>
+                <div className="mb-3 flex items-baseline justify-between gap-2">
+                  <h3 className="font-mono text-[0.7rem] uppercase tracking-[0.18em] text-slate-500">
+                    daily budgets
+                  </h3>
+                  <button
+                    onClick={onBurn}
+                    className="font-mono text-[0.65rem] text-accent/80 underline decoration-dotted underline-offset-2 transition-colors hover:text-accent"
+                  >
+                    spend team-b&apos;s budget
+                  </button>
+                </div>
+                {burnError && <p className="mb-2 font-mono text-[0.65rem] text-status-warn">{burnError}</p>}
                 <div className="flex flex-col gap-3.5">
                   {(snapshot.budgets.length
                     ? snapshot.budgets

@@ -204,6 +204,27 @@ export async function triggerChaos(
   }
 }
 
+/**
+ * Push a demo team's spend to just under its cap, so the next few requests
+ * are rejected with a real 402 and the budget bar visibly fills.
+ */
+export async function burnBudget(team = "team-b"): Promise<{ ok: boolean; error?: string }> {
+  if (!GATEWAY_URL) return { ok: false, error: "No gateway URL configured." };
+  try {
+    const res = await timedFetch("/demo/burn", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      // Exactly at cap: the next request is refused, so the 402 is immediate.
+      body: JSON.stringify({ team, fraction: 1.0 }),
+    });
+    if (res.status === 404) return { ok: false, error: "/demo/burn isn't deployed yet." };
+    if (!res.ok) return { ok: false, error: `Gateway returned ${res.status}.` };
+    return { ok: true };
+  } catch {
+    return { ok: false, error: "Gateway unreachable." };
+  }
+}
+
 function coerceEvent(raw: unknown): FeedEvent | null {
   if (!raw || typeof raw !== "object") return null;
   const e = raw as Record<string, unknown>;
