@@ -45,6 +45,18 @@ type Tally = {
 
 const EMPTY_TALLY: Tally = { attempted: 0, direct: 0, viaFailover: 0, failed: 0 };
 
+/**
+ * Outcome of the recovery clock.
+ *
+ * "insufficient-load" is its own case rather than a small number: if demo
+ * traffic never tripped the breaker, there was no recovery to time, and
+ * reporting a near-zero figure would be noise presented as a measurement.
+ */
+type Recovery =
+  | { kind: "idle" }
+  | { kind: "measured"; ms: number }
+  | { kind: "insufficient-load" };
+
 const BREAKER_STYLE: Record<BreakerState, { dot: string; text: string; ring: string; label: string }> = {
   closed: { dot: "bg-status-ok", text: "text-status-ok", ring: "border-status-ok/30 bg-status-ok/5", label: "closed" },
   half_open: { dot: "bg-status-warn", text: "text-status-warn", ring: "border-status-warn/30 bg-status-warn/5", label: "half-open" },
@@ -115,7 +127,7 @@ function FeedRow({ e, fresh }: { e: FeedEvent; fresh: boolean }) {
   );
 }
 
-function Scoreboard({ tally, recoveryMs }: { tally: Tally; recoveryMs: number | null }) {
+function Scoreboard({ tally, recovery }: { tally: Tally; recovery: Recovery }) {
   const settled = tally.direct + tally.viaFailover + tally.failed;
   const rate = settled > 0 ? ((tally.direct + tally.viaFailover) / settled) * 100 : null;
 
@@ -150,13 +162,53 @@ function Scoreboard({ tally, recoveryMs }: { tally: Tally; recoveryMs: number | 
       <div>
         <dt className="font-mono text-[0.62rem] uppercase tracking-wider text-slate-600">Recovery</dt>
         <dd className="tabular mt-1 font-mono text-lg text-slate-200">
-          {recoveryMs === null ? "—" : `${(recoveryMs / 1000).toFixed(2)}s`}
+          {recovery.kind === "measured" ? `${(recovery.ms / 1000).toFixed(2)}s` : "—"}
         </dd>
-        <dd className="mt-0.5 font-mono text-[0.6rem] text-slate-600">
-          {recoveryMs === null ? "outage end → breaker closed" : "breaker closed"}
+        <dd className="mt-0.5 font-mono text-[0.6rem] leading-relaxed text-slate-600">
+          {recovery.kind === "measured"
+            ? "at demo load"
+            : recovery.kind === "insufficient-load"
+              ? "breaker never tripped"
+              : "outage end → breaker closed"}
         </dd>
       </div>
     </dl>
+  );
+}
+
+/**
+ * Explains why the panel's recovery figure sits below the documented one.
+ *
+ * At demo traffic (~0.3 req/s) the breaker trips a handful of times at most,
+ * so the cooldown elapses almost immediately after the outage ends. The
+ * README's 4.47-5.05s comes from sustained chaos-test traffic, where the
+ * breaker re-trips on each failed probe. Both are correct measurements of
+ * different loads — but a visitor reading 0.67s next to a resume claiming
+ * ~5s sees a contradiction unless the difference is stated on the page.
+ */
+function RecoveryNote({ recovery }: { recovery: Recovery }) {
+  if (recovery.kind === "idle") return null;
+
+  if (recovery.kind === "insufficient-load") {
+    return (
+      <p className="mt-2.5 text-[0.7rem] leading-relaxed text-slate-500">
+        The breaker needs 5 consecutive failures to open, and this demo&apos;s trickle of traffic didn&apos;t
+        produce them before the outage window closed — so there was no recovery to time. The chaos test drives
+        sustained traffic and measures{" "}
+        <span className="tabular font-mono text-slate-400">4.47–5.05s</span>.
+      </p>
+    );
+  }
+
+  return (
+    <p className="mt-2.5 text-[0.7rem] leading-relaxed text-slate-500">
+      <span className="tabular font-mono text-slate-400">{(recovery.ms / 1000).toFixed(2)}s</span> here vs.{" "}
+      <span className="tabular font-mono text-slate-400">4.47–5.05s</span> in the chaos test above. Recovery is
+      measured from outage end to the breaker closing, and the breaker re-trips on every failed probe — so what
+      matters is when the <em>last</em>{" "}trip lands relative to the end of the window. A single visitor&apos;s
+      traffic trips it at different moments than the test&apos;s sustained load, so this figure moves run to run.
+      Neither number is the &ldquo;real&rdquo; one; the repeated-run range is the one worth quoting.
+    </p>
   );
 }
 
@@ -314,9 +366,11 @@ export default function LiveDemo() {
   const [wakeFailed, setWakeFailed] = useState(false);
   const [burnError, setBurnError] = useState<string | null>(null);
   const [tally, setTally] = useState<Tally>(EMPTY_TALLY);
-  const [recoveryMs, setRecoveryMs] = useState<number | null>(null);
+  const [recovery, setRecovery] = useState<Recovery>({ kind: "idle" });
   // Set the moment the outage window ends; cleared once the breaker closes.
   const recoveryStartRef = useRef<number | null>(null);
+  // Whether the breaker was actually observed open during this run.
+  const breakerTrippedRef = useRef(false);
   // Guards the auto-wake so it fires at most once per page load.
   const autoWokeRef = useRef(false);
 
@@ -353,11 +407,23 @@ export default function LiveDemo() {
 
   // ── recovery clock: stops the moment the breaker is seen closed ────────
   useEffect(() => {
+    const openai = snapshot.providers.find((p) => p.provider === "openai");
+
+    // Track whether the breaker actually opened during this run. If demo
+    // traffic was too thin to trip it, there is no recovery to report and a
+    // near-zero number would be noise dressed up as a measurement.
+    if (openai?.state === "open" || openai?.state === "half_open") {
+      breakerTrippedRef.current = true;
+    }
+
     if (recoveryStartRef.current === null) return;
 
-    const openai = snapshot.providers.find((p) => p.provider === "openai");
     if (openai?.state === "closed") {
-      setRecoveryMs(Date.now() - recoveryStartRef.current);
+      setRecovery(
+        breakerTrippedRef.current
+          ? { kind: "measured", ms: Date.now() - recoveryStartRef.current }
+          : { kind: "insufficient-load" }
+      );
       recoveryStartRef.current = null;
     }
   }, [snapshot]);
@@ -548,8 +614,9 @@ export default function LiveDemo() {
     // Each outage is its own experiment — reset the scoreboard so the numbers
     // describe this run rather than everything since the page loaded.
     setTally(EMPTY_TALLY);
-    setRecoveryMs(null);
+    setRecovery({ kind: "idle" });
     recoveryStartRef.current = null;
+    breakerTrippedRef.current = false;
     // Optimistic so the button reacts immediately; rolled back if the call fails.
     setChaosUntil(Date.now() + CHAOS_SECONDS * 1000);
 
@@ -604,7 +671,8 @@ export default function LiveDemo() {
                 </span>
               </div>
               <div className="mb-5">
-                <Scoreboard tally={tally} recoveryMs={recoveryMs} />
+                <Scoreboard tally={tally} recovery={recovery} />
+                <RecoveryNote recovery={recovery} />
               </div>
 
               <div className="mb-2.5 flex items-baseline justify-between">
