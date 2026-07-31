@@ -171,10 +171,15 @@ function OfflineState({
         </div>
       )}
 
-      {/* The recording, so the demo is legible even without waking anything. */}
-      <div className="mt-7 w-full max-w-2xl">
-        {DEMO_RECORDING ? (
-          DEMO_RECORDING.type === "video" ? (
+      {/*
+        Optional recording. Left unset on purpose: the wake button produces the
+        real panel in well under a minute, and a video sitting next to it would
+        mostly persuade people to watch a recording instead of running the
+        thing. Set DEMO_RECORDING above if that trade ever looks wrong.
+      */}
+      {DEMO_RECORDING && (
+        <div className="mt-7 w-full max-w-2xl">
+          {DEMO_RECORDING.type === "video" ? (
             <video
               src={DEMO_RECORDING.src}
               autoPlay
@@ -190,24 +195,29 @@ function OfflineState({
               alt="The live panel handling a simulated OpenAI outage"
               className="w-full rounded-md border border-ink-700"
             />
-          )
-        ) : (
-          /*
-            REPLACE ME ───────────────────────────────────────────────────────
-            Record ~20s of the running panel: idle, click the outage button,
-            the OpenAI pill goes red, failover rows appear, then recovery.
-            Save it to site/public/ and set DEMO_RECORDING above — this
-            placeholder disappears on its own.
-            ──────────────────────────────────────────────────────────────────
-          */
-          <div className="flex aspect-[16/9] items-center justify-center rounded-md border border-ink-700 bg-ink-900/80">
-            <div className="text-center">
-              <p className="font-mono text-[0.7rem] uppercase tracking-[0.2em] text-slate-700">recording slot</p>
-              <p className="mt-2 font-mono text-[0.68rem] text-slate-700">public/demo-recording.mp4</p>
+          )}
+        </div>
+      )}
+
+      {/* Say what waking actually buys, so the button is worth pressing. */}
+      {!DEMO_RECORDING && canWake && (
+        <dl className="mt-8 grid w-full max-w-lg gap-x-8 gap-y-2.5 text-left sm:grid-cols-2">
+          {[
+            ["Circuit breakers", "live state per provider"],
+            ["Request feed", "real traffic, failovers tagged"],
+            ["Outage button", "trips OpenAI for 30s"],
+            ["Budget bars", "per-team spend against caps"],
+          ].map(([term, desc]) => (
+            <div key={term} className="flex gap-2.5 border-t border-ink-800 pt-2.5">
+              <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-slate-700" />
+              <div>
+                <dt className="font-mono text-[0.72rem] text-slate-400">{term}</dt>
+                <dd className="text-[0.72rem] leading-relaxed text-slate-600">{desc}</dd>
+              </div>
             </div>
-          </div>
-        )}
-      </div>
+          ))}
+        </dl>
+      )}
     </div>
   );
 }

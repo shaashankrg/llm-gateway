@@ -119,17 +119,19 @@ When the reason is `unreachable`, the offline state offers **"Wake it up (~30s)"
 
 This is deliberately honest rather than hidden — a free-tier container really is asleep, and saying so reads better than a demo that looks broken.
 
-## Drop in a demo recording
+## The demo recording (optional, and skipped on purpose)
 
-The offline state reserves a 16:9 slot. Record ~20s of the running panel: idle, click the outage button, the OpenAI pill goes red, failover rows appear, then recovery.
+`DEMO_RECORDING` in [`components/LiveDemo.tsx`](components/LiveDemo.tsx) is `null`. The offline state shows the wake-up button and a short list of what the live panel contains, rather than a video.
 
-Save it to `public/`, then set `DEMO_RECORDING` near the top of [`components/LiveDemo.tsx`](components/LiveDemo.tsx):
+That's a deliberate trade: waking the container takes well under a minute and produces the real thing, and a recording sitting next to that button would mostly persuade people to watch a video instead of running the demo. The interactive panel is the reason this link is worth sending.
+
+If you decide otherwise, record ~20s of the running panel — idle, click the outage button, the OpenAI pill goes red, failover rows appear, then recovery — save it to `public/`, and set:
 
 ```ts
 const DEMO_RECORDING = { src: "/demo-recording.mp4", type: "video" as const };
 ```
 
-The placeholder disappears on its own. **Prefer `.mp4` over `.gif`** — roughly an order of magnitude smaller for the same length, and it renders muted/autoplay/loop so it behaves like a GIF anyway. To generate traffic while recording:
+The what-you-get list is replaced by the video automatically. Prefer `.mp4` over `.gif` — roughly an order of magnitude smaller for the same clip, and it renders muted/autoplay/loop so it behaves like one anyway. To generate traffic while recording:
 
 ```bash
 python demo_traffic.py --seconds 60 --chaos
@@ -137,11 +139,11 @@ python demo_traffic.py --seconds 60 --chaos
 
 ## Before you ship
 
-- [ ] Replace `LINKEDIN_URL` in [`lib/content.ts`](lib/content.ts) — it's a placeholder.
-- [ ] Set `NEXT_PUBLIC_GATEWAY_URL` in Vercel.
-- [ ] Add CORS on the gateway for the Vercel domain.
-- [ ] Add `/demo/chaos` and `/demo/feed`.
-- [ ] Drop in `public/demo-recording.gif` for when the backend is asleep.
+- [ ] Replace `LINKEDIN_URL` in [`lib/content.ts`](lib/content.ts) — still a placeholder.
+- [x] Set `NEXT_PUBLIC_GATEWAY_URL` in Vercel.
+- [x] Add CORS on the gateway for the Vercel domain (`CORS_ORIGINS`).
+- [x] Add `/demo/chaos`, `/demo/feed`, and `/demo/status` (see `app/demo.py`).
+- [ ] Optional: a demo recording — deliberately skipped, see above.
 
 ## Layout
 
