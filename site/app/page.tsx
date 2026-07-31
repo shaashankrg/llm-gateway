@@ -1,6 +1,6 @@
 import ArchitectureDiagram from "@/components/ArchitectureDiagram";
 import LiveDemo from "@/components/LiveDemo";
-import { Capabilities, Decisions, Limits, Results, Section } from "@/components/Sections";
+import { Capabilities, Dashboard, Decisions, Limits, Results, Section } from "@/components/Sections";
 import { CONTACT_EMAIL, GITHUB_URL, HERO, LINKEDIN_URL } from "@/lib/content";
 
 function GitHubIcon() {
@@ -88,6 +88,7 @@ export default function Page() {
         <LiveDemo />
       </Section>
 
+      <Dashboard />
       <Decisions />
       <Capabilities />
       <Limits />

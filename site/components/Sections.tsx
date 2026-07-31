@@ -1,4 +1,13 @@
-import { CAPABILITIES, DECISIONS, LIMITS, NEGATIVE_RESULT, STATS, type Stat } from "@/lib/content";
+import {
+  CAPABILITIES,
+  DASHBOARD_SHOTS,
+  DECISIONS,
+  LIMITS,
+  NEGATIVE_RESULT,
+  STATS,
+  type DashboardShot,
+  type Stat,
+} from "@/lib/content";
 
 export function Section({
   id,
@@ -114,6 +123,55 @@ export function Results() {
             </p>
           </div>
         </div>
+      </div>
+    </Section>
+  );
+}
+
+function Shot({ shot }: { shot: DashboardShot }) {
+  return (
+    <figure className={`card overflow-hidden ${shot.wide ? "md:col-span-2" : ""}`}>
+      {shot.src ? (
+        // eslint-disable-next-line @next/next/no-img-element -- static asset, no optimization needed
+        <img src={shot.src} alt={shot.title} className="w-full border-b border-ink-800" />
+      ) : (
+        /*
+          REPLACE ME ────────────────────────────────────────────────────────
+          Screenshot this Grafana panel, save it to site/public/, then set
+          `src` for this entry in lib/content.ts (e.g. "/grafana-breaker.png").
+          This placeholder disappears automatically once src is set.
+          ───────────────────────────────────────────────────────────────────
+        */
+        <div
+          className={`flex items-center justify-center border-b border-ink-800 bg-ink-950/70 ${
+            shot.wide ? "aspect-[21/6]" : "aspect-[16/9]"
+          }`}
+        >
+          <p className="font-mono text-[0.65rem] uppercase tracking-[0.2em] text-slate-700">
+            grafana screenshot slot
+          </p>
+        </div>
+      )}
+      <figcaption className="p-4">
+        <p className="font-mono text-[0.8rem] text-slate-200">{shot.title}</p>
+        <p className="mt-1.5 text-[0.8rem] leading-relaxed text-slate-500">{shot.caption}</p>
+      </figcaption>
+    </figure>
+  );
+}
+
+export function Dashboard() {
+  return (
+    <Section
+      id="observability"
+      eyebrow="observability"
+      title="What it looks like from the inside"
+      intro="OpenTelemetry traces span the queue boundary — the trace context is captured at enqueue and re-attached inside the worker, so one request produces one connected trace instead of two orphans. These panels ship provisioned with the repo."
+    >
+      <div className="grid gap-4 md:grid-cols-2">
+        {DASHBOARD_SHOTS.map((s) => (
+          <Shot key={s.title} shot={s} />
+        ))}
       </div>
     </Section>
   );

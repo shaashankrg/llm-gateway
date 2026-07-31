@@ -216,3 +216,61 @@ export async function fetchFeed(limit = 15): Promise<FeedEvent[] | null> {
 
 export const hasGatewayUrl = () => GATEWAY_URL.length > 0;
 export const feedStreamUrl = () => `${GATEWAY_URL}/demo/feed?stream=1`;
+
+/*
+ * Demo traffic.
+ *
+ * The feed only shows real requests, so without this the panel greets every
+ * visitor with an empty box. Sending a trickle from the browser means the
+ * demo is self-demonstrating: rows are already moving by the time someone
+ * has read the heading.
+ *
+ * These team keys are public on purpose. They reach a mock-mode gateway that
+ * makes no upstream provider calls, and they're still subject to the same
+ * rate limit and daily budget as any other team — so the worst a visitor can
+ * do is exhaust a demo team's own quota.
+ */
+const DEMO_TEAMS = [
+  { key: "team-a-key", models: ["gpt-4", "claude-sonnet-5"] },
+  { key: "team-b-key", models: ["gpt-4", "claude-sonnet-5"] },
+];
+
+const DEMO_PROMPTS = [
+  "Summarize circuit breakers in one line.",
+  "What is a token bucket?",
+  "Explain exponential backoff.",
+  "Why use a priority queue here?",
+];
+
+const pick = <T,>(xs: T[]): T => xs[Math.floor(Math.random() * xs.length)];
+
+/**
+ * Fire one request through the gateway to give the feed something to show.
+ * Resolves regardless of outcome — a 429 or 503 is a perfectly good row.
+ */
+export async function sendDemoRequest(): Promise<void> {
+  if (!GATEWAY_URL) return;
+
+  const team = pick(DEMO_TEAMS);
+  try {
+    await timedFetch(
+      "/generate",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-API-Key": team.key,
+          "X-Priority": Math.random() < 0.75 ? "realtime" : "batch",
+        },
+        body: JSON.stringify({
+          prompt: pick(DEMO_PROMPTS),
+          model: pick(team.models),
+          max_tokens: 30,
+        }),
+      },
+      20000
+    );
+  } catch {
+    // Nothing to do — the request's own outcome is what the feed reports.
+  }
+}

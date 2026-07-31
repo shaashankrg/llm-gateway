@@ -75,6 +75,48 @@ export const NEGATIVE_RESULT = {
     "The scale-out infrastructure is correct — round-robin verified, shared-state quota verified — but throughput is client-bound, so this setup cannot demonstrate linear scaling. Proving that needs a distributed load generator, which isn't built here. There is no \"3× throughput\" claim because the method doesn't support one.",
 };
 
+/**
+ * Grafana dashboard panels, from grafana/provisioning/dashboards/gateway.json.
+ * `src` points at a screenshot in site/public — leave it null to render a
+ * labelled placeholder slot instead of a broken image.
+ */
+export type DashboardShot = {
+  title: string;
+  caption: string;
+  src: string | null;
+  wide?: boolean;
+};
+
+export const DASHBOARD_SHOTS: DashboardShot[] = [
+  {
+    title: "Circuit breaker state",
+    caption:
+      "The gauge the chaos test reads as ground truth for when the breaker actually opened and closed — rather than inferring it from responses.",
+    src: null,
+    wide: true,
+  },
+  {
+    title: "Fallback events",
+    caption: "Cross-provider failovers as they fire, labelled by direction.",
+    src: null,
+  },
+  {
+    title: "Request latency (P50/P95/P99)",
+    caption: "End-to-end latency, including queue wait rather than just upstream time.",
+    src: null,
+  },
+  {
+    title: "Provider call latency",
+    caption: "Per-provider, so a slow upstream is distinguishable from a slow gateway.",
+    src: null,
+  },
+  {
+    title: "Requests/sec and error rate",
+    caption: "Throughput and failures side by side during a chaos run.",
+    src: null,
+  },
+];
+
 export type Decision = { title: string; body: string; tag: string };
 
 export const DECISIONS: Decision[] = [

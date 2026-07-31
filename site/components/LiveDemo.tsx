@@ -11,6 +11,7 @@ import {
   fetchFeed,
   fetchSnapshot,
   hasGatewayUrl,
+  sendDemoRequest,
   triggerChaos,
 } from "@/lib/gateway";
 
@@ -171,8 +172,14 @@ export default function LiveDemo() {
   const [chaosError, setChaosError] = useState<string | null>(null);
   // Until the first poll resolves we show a neutral loading frame, not "offline".
   const [checked, setChecked] = useState(false);
+  const [onScreen, setOnScreen] = useState(false);
 
   const freshestRef = useRef<string | null>(null);
+  const panelRef = useRef<HTMLDivElement | null>(null);
+
+  // Declared before the effects below, which re-attach the visibility observer
+  // when the panel swaps between its offline and live layouts.
+  const offline = checked && !snapshot.online;
 
   // ── status + budget polling ────────────────────────────────────────────
   useEffect(() => {
@@ -253,6 +260,48 @@ export default function LiveDemo() {
     };
   }, [snapshot.online, pushEvents]);
 
+  // ── self-demonstrating traffic ─────────────────────────────────────────
+  // The feed reports real requests only, so the panel drives a trickle of its
+  // own while it's on screen. Gated on visibility (both IntersectionObserver
+  // and tab focus) so it never runs for someone who scrolled past or left the
+  // tab open in the background.
+  // Watch visibility separately, and keep it in state — the observer has to be
+  // attached after the ref is populated, which a ref alone can't trigger.
+  useEffect(() => {
+    const node = panelRef.current;
+    if (!node) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => setOnScreen(entry.isIntersecting),
+      { threshold: 0.15 }
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [offline]);
+
+  useEffect(() => {
+    if (!snapshot.online || !onScreen) return;
+
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let stopped = false;
+
+    const loop = async () => {
+      if (stopped) return;
+      if (document.visibilityState === "visible") {
+        await sendDemoRequest();
+      }
+      // Jittered so rows land unevenly, the way real traffic does.
+      if (!stopped) timer = setTimeout(loop, 900 + Math.random() * 900);
+    };
+
+    loop();
+
+    return () => {
+      stopped = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [snapshot.online, onScreen]);
+
   // ── chaos countdown ────────────────────────────────────────────────────
   // Driven off a wall-clock deadline rather than by decrementing state, so a
   // re-render mid-tick can't drop a second and the countdown stays truthful
@@ -284,11 +333,10 @@ export default function LiveDemo() {
     }
   };
 
-  const offline = checked && !snapshot.online;
   const chaosActive = chaosUntil !== null;
 
   return (
-    <div className="card overflow-hidden">
+    <div ref={panelRef} className="card overflow-hidden">
       {/* title bar */}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-ink-700 bg-ink-850/60 px-4 py-3 sm:px-5">
         <div className="flex gap-1.5" aria-hidden="true">
