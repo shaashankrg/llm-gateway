@@ -111,11 +111,29 @@ The panel never crashes the page. It degrades in this order:
 2. `/metrics` → breaker pills live, budgets at zero.
 3. Nothing reachable, no URL set, or demo endpoints 404 → **"Demo backend is asleep right now — here's what it looks like when running."**
 
-All fetches use a 6s abort timeout so a scale-to-zero host that hangs instead of refusing doesn't hang the UI with it.
+Both probes run **concurrently** against a 3.5s abort timeout, so the offline state appears in ~4s rather than the ~12s it took when they ran in series. That distinction matters: a scale-to-zero host accepts the TCP connection and then goes quiet, so there is no fast failure to detect — it has to be timed out.
+
+### The wake-up button
+
+When the reason is `unreachable`, the offline state offers **"Wake it up (~30s)"**. It polls `/healthz` with a generous per-attempt timeout for up to 90s, showing a spinner, then loads the live panel automatically once the container answers. Background polling pauses while a wake is in flight so it can't stamp the panel back to offline mid-boot.
+
+This is deliberately honest rather than hidden — a free-tier container really is asleep, and saying so reads better than a demo that looks broken.
 
 ## Drop in a demo recording
 
-The offline state reserves a 16:9 slot for a screenshot or GIF. Save a recording to `public/demo-recording.gif`, then follow the marked `REPLACE ME` comment in [`components/LiveDemo.tsx`](components/LiveDemo.tsx) — swap the placeholder `div` for the `img` tag in the comment. A ~20s capture works well: idle, click the outage button, breaker goes red, failover tags appear, recovery.
+The offline state reserves a 16:9 slot. Record ~20s of the running panel: idle, click the outage button, the OpenAI pill goes red, failover rows appear, then recovery.
+
+Save it to `public/`, then set `DEMO_RECORDING` near the top of [`components/LiveDemo.tsx`](components/LiveDemo.tsx):
+
+```ts
+const DEMO_RECORDING = { src: "/demo-recording.mp4", type: "video" as const };
+```
+
+The placeholder disappears on its own. **Prefer `.mp4` over `.gif`** — roughly an order of magnitude smaller for the same length, and it renders muted/autoplay/loop so it behaves like a GIF anyway. To generate traffic while recording:
+
+```bash
+python demo_traffic.py --seconds 60 --chaos
+```
 
 ## Before you ship
 

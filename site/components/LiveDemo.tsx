@@ -13,6 +13,7 @@ import {
   hasGatewayUrl,
   sendDemoRequest,
   triggerChaos,
+  wakeGateway,
 } from "@/lib/gateway";
 
 const MAX_ROWS = 15;
@@ -108,49 +109,104 @@ function BudgetBar({ row }: { row: BudgetRow }) {
   );
 }
 
+/**
+ * Set this once a recording exists at site/public/. Use an .mp4 if you have
+ * one — it's an order of magnitude smaller than an equivalent GIF and loops
+ * just as well. Leave null to show a labelled placeholder instead.
+ */
+const DEMO_RECORDING: { src: string; type: "video" | "image" } | null = null;
+// e.g. { src: "/demo-recording.mp4", type: "video" }
+
 /** Shown when the backend is asleep, missing /demo/*, or has no URL configured. */
-function OfflineState({ reason }: { reason: GatewaySnapshot["reason"] }) {
+function OfflineState({
+  reason,
+  onWake,
+  waking,
+  wakeFailed,
+}: {
+  reason: GatewaySnapshot["reason"];
+  onWake: () => void;
+  waking: boolean;
+  wakeFailed: boolean;
+}) {
   const note =
     reason === "no-url"
       ? "NEXT_PUBLIC_GATEWAY_URL isn't set for this deployment."
       : reason === "not-implemented"
         ? "The gateway answered, but the /demo endpoints aren't deployed on it yet."
-        : "Couldn't reach the gateway.";
+        : "The gateway is hosted on a free tier that spins down when idle.";
+
+  // Nothing to wake if there's no URL or the host is up but missing endpoints.
+  const canWake = reason === "unreachable";
 
   return (
-    <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-ink-700 bg-ink-950/60 px-6 py-14 text-center">
-      {/* Sleeping-terminal mark, drawn rather than imported. */}
-      <svg viewBox="0 0 48 48" className="mb-5 h-10 w-10 text-slate-700" fill="none" aria-hidden="true">
-        <rect x="4" y="9" width="40" height="30" rx="3" stroke="currentColor" strokeWidth="2" />
-        <path d="M13 20l5 4-5 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-        <path d="M25 28h9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-      </svg>
-
-      <p className="max-w-md text-[0.95rem] text-slate-400">
+    <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-ink-700 bg-ink-950/60 px-6 py-12 text-center">
+      <p className="max-w-lg text-[0.95rem] text-slate-300">
         Demo backend is asleep right now — here&apos;s what it looks like when running.
       </p>
-      <p className="mt-2 font-mono text-[0.7rem] text-slate-600">{note}</p>
+      <p className="mt-2 max-w-md font-mono text-[0.7rem] leading-relaxed text-slate-600">{note}</p>
 
-      {/*
-        REPLACE ME ─────────────────────────────────────────────────────────
-        Drop a recording of the running panel at site/public/demo-recording.gif
-        (or .mp4/.webm), then swap this placeholder block for:
-
-          <img
-            src="/demo-recording.gif"
-            alt="The live panel handling a simulated OpenAI outage"
-            className="mt-6 w-full max-w-2xl rounded-md border border-ink-700"
-          />
-
-        A ~20s capture works well: idle state, click the outage button, watch
-        the OpenAI pill go red and failover tags appear, then recovery.
-        ────────────────────────────────────────────────────────────────────
-      */}
-      <div className="mt-6 flex aspect-[16/9] w-full max-w-2xl items-center justify-center rounded-md border border-ink-700 bg-ink-900/80">
-        <div className="text-center">
-          <p className="font-mono text-[0.7rem] uppercase tracking-[0.2em] text-slate-700">screenshot / gif slot</p>
-          <p className="mt-2 font-mono text-[0.68rem] text-slate-700">public/demo-recording.gif</p>
+      {canWake && (
+        <div className="mt-5">
+          <button
+            onClick={onWake}
+            disabled={waking}
+            className="inline-flex items-center gap-2.5 rounded-md border border-accent/40 bg-accent/10 px-4 py-2.5 text-sm font-medium text-accent transition-colors hover:bg-accent/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 disabled:cursor-progress disabled:border-ink-700 disabled:bg-ink-850 disabled:text-slate-500"
+          >
+            {waking && (
+              <span
+                className="h-3 w-3 animate-spin rounded-full border border-current border-t-transparent"
+                aria-hidden="true"
+              />
+            )}
+            {waking ? "Waking it up… (~30s)" : "Wake it up (~30s)"}
+          </button>
+          <p className="mt-2.5 font-mono text-[0.68rem] text-slate-600">
+            {waking
+              ? "Booting the container — the panel loads by itself when it answers."
+              : wakeFailed
+                ? "Didn't come up in time. It may be mid-deploy — try again in a minute."
+                : "Starts the container and connects the panel automatically."}
+          </p>
         </div>
+      )}
+
+      {/* The recording, so the demo is legible even without waking anything. */}
+      <div className="mt-7 w-full max-w-2xl">
+        {DEMO_RECORDING ? (
+          DEMO_RECORDING.type === "video" ? (
+            <video
+              src={DEMO_RECORDING.src}
+              autoPlay
+              loop
+              muted
+              playsInline
+              className="w-full rounded-md border border-ink-700"
+            />
+          ) : (
+            // eslint-disable-next-line @next/next/no-img-element -- static asset
+            <img
+              src={DEMO_RECORDING.src}
+              alt="The live panel handling a simulated OpenAI outage"
+              className="w-full rounded-md border border-ink-700"
+            />
+          )
+        ) : (
+          /*
+            REPLACE ME ───────────────────────────────────────────────────────
+            Record ~20s of the running panel: idle, click the outage button,
+            the OpenAI pill goes red, failover rows appear, then recovery.
+            Save it to site/public/ and set DEMO_RECORDING above — this
+            placeholder disappears on its own.
+            ──────────────────────────────────────────────────────────────────
+          */
+          <div className="flex aspect-[16/9] items-center justify-center rounded-md border border-ink-700 bg-ink-900/80">
+            <div className="text-center">
+              <p className="font-mono text-[0.7rem] uppercase tracking-[0.2em] text-slate-700">recording slot</p>
+              <p className="mt-2 font-mono text-[0.68rem] text-slate-700">public/demo-recording.mp4</p>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -173,6 +229,8 @@ export default function LiveDemo() {
   // Until the first poll resolves we show a neutral loading frame, not "offline".
   const [checked, setChecked] = useState(false);
   const [onScreen, setOnScreen] = useState(false);
+  const [waking, setWaking] = useState(false);
+  const [wakeFailed, setWakeFailed] = useState(false);
 
   const freshestRef = useRef<string | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
@@ -183,6 +241,11 @@ export default function LiveDemo() {
 
   // ── status + budget polling ────────────────────────────────────────────
   useEffect(() => {
+    // While a wake is in flight its own probe owns the connection: a 3.5s
+    // poll would keep timing out against the booting container and stamp the
+    // panel back to offline underneath the spinner.
+    if (waking) return;
+
     let alive = true;
 
     const poll = async () => {
@@ -198,7 +261,7 @@ export default function LiveDemo() {
       alive = false;
       clearInterval(id);
     };
-  }, []);
+  }, [waking]);
 
   // ── request feed: SSE when available, polling otherwise ────────────────
   const pushEvents = useCallback((incoming: FeedEvent[]) => {
@@ -320,6 +383,22 @@ export default function LiveDemo() {
     return () => clearInterval(id);
   }, [chaosUntil]);
 
+  const onWake = async () => {
+    setWaking(true);
+    setWakeFailed(false);
+
+    const awake = await wakeGateway();
+    if (awake) {
+      // Give the app a moment to finish starting before the first real poll,
+      // so the panel doesn't flash back to offline right after waking.
+      await new Promise((r) => setTimeout(r, 1200));
+      setSnapshot(await fetchSnapshot(8000));
+    } else {
+      setWakeFailed(true);
+    }
+    setWaking(false);
+  };
+
   const onChaos = async () => {
     setChaosError(null);
     // Optimistic so the button reacts immediately; rolled back if the call fails.
@@ -351,13 +430,18 @@ export default function LiveDemo() {
           }`}
         >
           <span className={`h-1.5 w-1.5 rounded-full ${snapshot.online ? "bg-status-ok" : "bg-slate-700"}`} />
-          {!checked ? "connecting" : snapshot.online ? "connected" : "offline"}
+          {waking ? "waking" : !checked ? "connecting" : snapshot.online ? "connected" : "offline"}
         </span>
       </div>
 
       <div className="p-4 sm:p-6">
         {offline ? (
-          <OfflineState reason={snapshot.reason} />
+          <OfflineState
+            reason={snapshot.reason}
+            onWake={onWake}
+            waking={waking}
+            wakeFailed={wakeFailed}
+          />
         ) : (
           <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem] lg:gap-8">
             {/* ── feed (first on desktop, second on mobile) ── */}

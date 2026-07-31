@@ -49,7 +49,7 @@ function headers(): HeadersInit {
  * fetch with a hard timeout. A gateway that is asleep on a scale-to-zero host
  * will hang rather than refuse, and the panel must not hang with it.
  */
-async function timedFetch(path: string, init: RequestInit = {}, ms = 6000): Promise<Response> {
+async function timedFetch(path: string, init: RequestInit = {}, ms = 3500): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), ms);
   try {
@@ -110,44 +110,72 @@ const UNKNOWN_PROVIDERS: ProviderStatus[] = [
  * One poll of gateway state. Prefers /demo/status (breaker + budgets in one
  * shot); falls back to scraping /metrics if that endpoint isn't deployed yet.
  */
-export async function fetchSnapshot(): Promise<GatewaySnapshot> {
+export async function fetchSnapshot(timeoutMs = 3500): Promise<GatewaySnapshot> {
   if (!GATEWAY_URL) {
     return { online: false, reason: "no-url", providers: UNKNOWN_PROVIDERS, budgets: [] };
   }
 
-  // Preferred path: a single demo endpoint with everything the panel needs.
-  try {
-    const res = await timedFetch("/demo/status");
-    if (res.ok) {
-      const data = (await res.json()) as {
-        providers?: ProviderStatus[];
-        budgets?: BudgetRow[];
+  // Both probes run concurrently rather than in series. Against a sleeping
+  // host each one hangs for the full timeout, and running them sequentially
+  // doubled the time before the panel could admit it was offline.
+  const statusProbe = timedFetch("/demo/status", {}, timeoutMs)
+    .then(async (res) => {
+      if (!res.ok) return null;
+      const data = (await res.json()) as { providers?: ProviderStatus[]; budgets?: BudgetRow[] };
+      if (!data.providers?.length) return null;
+      return {
+        online: true as const,
+        reason: null,
+        providers: data.providers,
+        budgets: data.budgets ?? [],
       };
-      if (data.providers?.length) {
-        return {
-          online: true,
-          reason: null,
-          providers: data.providers,
-          budgets: data.budgets ?? [],
-        };
-      }
-    }
-    // A 404 here just means the optional endpoint isn't built — keep going.
-  } catch {
-    // Network-level failure; /metrics may still answer, so don't give up yet.
-  }
+    })
+    .catch(() => null);
 
-  // Fallback: scrape the Prometheus endpoint, which already exists today.
-  try {
-    const res = await timedFetch("/metrics");
-    if (res.ok) {
-      const providers = parseBreakerMetrics(await res.text());
-      return { online: true, reason: null, providers, budgets: [] };
+  const metricsProbe = timedFetch("/metrics", {}, timeoutMs)
+    .then(async (res) => {
+      if (!res.ok) return null;
+      return {
+        online: true as const,
+        reason: null,
+        providers: parseBreakerMetrics(await res.text()),
+        budgets: [] as BudgetRow[],
+      };
+    })
+    .catch(() => null);
+
+  // Prefer /demo/status when it answers — it carries budgets too — but don't
+  // wait on it if /metrics already proved the gateway is awake.
+  const [status, metrics] = await Promise.all([statusProbe, metricsProbe]);
+  const best = status ?? metrics;
+  if (best) return best;
+
+  return { online: false, reason: "unreachable", providers: UNKNOWN_PROVIDERS, budgets: [] };
+}
+
+/**
+ * Poke a sleeping host and resolve once it answers.
+ *
+ * Free hosting tiers spin the container down after idle; the first request
+ * then takes ~30-60s while it boots. Rather than hide that, the panel offers
+ * it as a button, so the wait is something the visitor chose and can watch.
+ */
+export async function wakeGateway(totalMs = 90000): Promise<boolean> {
+  if (!GATEWAY_URL) return false;
+
+  const deadline = Date.now() + totalMs;
+  while (Date.now() < deadline) {
+    try {
+      // A generous per-attempt timeout: the point is to hold the connection
+      // open while the container boots, not to fail fast.
+      const res = await timedFetch("/healthz", {}, 20000);
+      if (res.ok) return true;
+    } catch {
+      // Still asleep — wait a beat and try again.
     }
-    return { online: false, reason: "not-implemented", providers: UNKNOWN_PROVIDERS, budgets: [] };
-  } catch {
-    return { online: false, reason: "unreachable", providers: UNKNOWN_PROVIDERS, budgets: [] };
+    await new Promise((r) => setTimeout(r, 2000));
   }
+  return false;
 }
 
 /** Toggle the simulated provider outage. Returns whether the call landed. */
