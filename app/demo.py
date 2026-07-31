@@ -137,12 +137,14 @@ async def demo_feed(limit: int = 15, stream: int = 0):
 
 class BurnRequest(BaseModel):
     team: str = Field(default="team-b")
-    # Fraction of the team's daily cap to leave spent. The default sits just
-    # under 1.0 because enforcement here is post-hoc: a request completes,
-    # its real cost is added, and the *next* one is refused once the total
-    # crosses the cap. A mock request costs ~$0.0001, so seeding at 0.97 of a
-    # $1 cap would take hundreds of requests to trip — 0.999 trips on the next.
-    fraction: float = Field(default=0.999, ge=0.0, le=1.0)
+    # Fraction of the team's daily cap to leave spent.
+    #
+    # Defaults to exactly 1.0 so the very next request is refused. Enforcement
+    # is post-hoc — a request completes, its real cost is added, and the next
+    # is refused once the total has crossed the cap — and a mock request costs
+    # only ~$0.00009, so any fraction below 1.0 leaves a visitor clicking
+    # through dozens of requests before anything visibly happens.
+    fraction: float = Field(default=1.0, ge=0.0, le=1.0)
 
 
 @router.post("/burn")
