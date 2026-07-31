@@ -91,29 +91,33 @@ export const DASHBOARD_SHOTS: DashboardShot[] = [
   {
     title: "Circuit breaker state",
     caption:
-      "The gauge the chaos test reads as ground truth for when the breaker actually opened and closed — rather than inferring it from responses.",
-    src: null,
+      "OpenAI trips to open and recovers while Anthropic stays closed. This is the gauge the chaos test reads as ground truth for when the breaker actually opened — rather than inferring it from responses.",
+    src: "/grafana-breaker.png",
     wide: true,
   },
   {
     title: "Fallback events",
-    caption: "Cross-provider failovers as they fire, labelled by direction.",
-    src: null,
+    caption:
+      "Cross-provider failovers as they fire, labelled by direction: openai → anthropic. Each step is a request that would otherwise have failed.",
+    src: "/grafana-fallback.png",
   },
   {
     title: "Request latency (P50/P95/P99)",
-    caption: "End-to-end latency, including queue wait rather than just upstream time.",
-    src: null,
+    caption:
+      "P50 stays flat on the floor while P95/P99 jump to ~4-5s — the retry-then-failover cost lands only on the requests that hit the failing provider, not on everyone.",
+    src: "/grafana-request-latency.png",
   },
   {
     title: "Provider call latency",
-    caption: "Per-provider, so a slow upstream is distinguishable from a slow gateway.",
-    src: null,
+    caption:
+      "Split per provider, so a slow upstream is distinguishable from a slow gateway. OpenAI's percentiles climb during the outage; Anthropic's stay flat.",
+    src: "/grafana-provider-latency.png",
   },
   {
-    title: "Requests/sec and error rate",
-    caption: "Throughput and failures side by side during a chaos run.",
-    src: null,
+    title: "Error rate",
+    caption:
+      "Upstream errors by provider and type, rising as the outage begins and returning to zero on recovery.",
+    src: "/grafana-error-rate.png",
   },
 ];
 
