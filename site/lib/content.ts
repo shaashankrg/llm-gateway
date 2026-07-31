@@ -22,7 +22,6 @@ export type Stat = {
   value: string;
   unit?: string;
   detail: string;
-  tone?: "ok" | "info" | "warn";
 };
 
 export const STATS: Stat[] = [
@@ -32,7 +31,6 @@ export const STATS: Stat[] = [
     unit: "%",
     detail:
       "Sustained mixed traffic across 55 teams through a 30s forced OpenAI outage, excluding rate-limit 429s. Range across 3 runs — no single best run quoted.",
-    tone: "ok",
   },
   {
     label: "Recovery time, live traffic",
@@ -40,7 +38,6 @@ export const STATS: Stat[] = [
     unit: "s",
     detail:
       "Time from outage end to steady-state success, measured from real request outcomes.",
-    tone: "ok",
   },
   {
     label: "Recovery time, breaker gauge",
@@ -48,14 +45,12 @@ export const STATS: Stat[] = [
     unit: "s",
     detail:
       "The same recovery measured independently from the Prometheus breaker gauge, sampled every 0.25s. The two methods agree within 0.3s.",
-    tone: "info",
   },
   {
     label: "Quota under scale-out",
     value: "10 / 40",
     detail:
       "40 requests for one team through the load balancer across 3 replicas: exactly 10 succeed, 30 return 429 — identical to a single instance. Verified at 500, 1000, and 1500 concurrency.",
-    tone: "ok",
   },
 ];
 
@@ -118,46 +113,6 @@ export const DASHBOARD_SHOTS: DashboardShot[] = [
     caption:
       "Upstream errors by provider and type, rising as the outage begins and returning to zero on recovery.",
     src: "/grafana-error-rate.png",
-  },
-];
-
-export type Decision = { title: string; body: string; tag: string };
-
-export const DECISIONS: Decision[] = [
-  {
-    tag: "concurrency",
-    title: "Atomic state lives in Lua, not Python",
-    body: "The rate-limit refill and the budget reservation are both check-then-act sequences. In application code, two concurrent requests read the same stale value and both pass. They run as single indivisible Redis operations instead. The test fires 50 concurrent requests at a fresh bucket and asserts exactly 10 pass — a sequential test would pass even with the race present, so the concurrency is the point of the test.",
-  },
-  {
-    tag: "bug fixed",
-    title: "try/finally, not Starlette's BackgroundTask",
-    body: "Reading Starlette's source revealed that BackgroundTask only runs when the response generator finishes normally. A provider dying mid-stream — precisely the case where a budget reservation must be released — silently skipped it, leaking budget forever. The generator is now wrapped in try/except/finally so reconciliation always runs, and the same wrapper signals the circuit breaker on both paths.",
-  },
-  {
-    tag: "security",
-    title: "Failover is bounded by authorization",
-    body: "When the primary fails, the request re-routes to the other provider — but only if the mapped fallback model is in the calling team's allow-list. Failing over to a model a team isn't permitted to use would quietly turn a reliability feature into an authorization bypass.",
-  },
-  {
-    tag: "retries",
-    title: "Retryable vs. permanent errors are distinguished",
-    body: "Only 429/500/502/503 retry. A 400 is a bad request that will still be bad three attempts later, so it raises immediately rather than tripling latency and wasting the circuit breaker's failure budget on an error that will never succeed.",
-  },
-  {
-    tag: "parsing",
-    title: "Anthropic's content[0] is not the text block",
-    body: "With adaptive thinking, a thinking block can precede the text block, so the parser searches for type == \"text\" instead of indexing position 0. The providers also report streaming usage differently: OpenAI sends a final chunk with an empty choices array — indexing choices[0] there raises IndexError — while Anthropic splits input tokens into message_start and output tokens into message_delta. Both are handled explicitly.",
-  },
-  {
-    tag: "test hygiene",
-    title: "Failure injection that can't corrupt neighboring tests",
-    body: "The mock failure counter is decremented by a Lua script that only touches the key if it already exists, so ordinary mock traffic from unrelated tests can never create or drain a counter nobody set.",
-  },
-  {
-    tag: "infrastructure",
-    title: "nginx re-resolves upstreams at request time",
-    body: "Using a resolver plus a variable in proxy_pass forces DNS re-resolution, so nginx sees all three replica IPs. Caching a single IP at startup would pin every request to one replica and silently invalidate the entire scale-out experiment.",
   },
 ];
 

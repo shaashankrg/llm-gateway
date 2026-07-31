@@ -1,7 +1,6 @@
 import {
   CAPABILITIES,
   DASHBOARD_SHOTS,
-  DECISIONS,
   LIMITS,
   NEGATIVE_RESULT,
   STATS,
@@ -34,18 +33,15 @@ export function Section({
   );
 }
 
-const TONE: Record<NonNullable<Stat["tone"]>, string> = {
-  ok: "text-status-ok",
-  info: "text-status-info",
-  warn: "text-status-warn",
-};
-
 function StatCard({ stat }: { stat: Stat }) {
+  // Figures are near-white rather than color-coded: every stat here is a good
+  // result, so a hue would carry no information and only add noise. Size and
+  // weight do the emphasis instead.
   return (
     <div className="card flex flex-col p-5 transition-colors hover:border-ink-600">
       <p className="font-mono text-[0.68rem] uppercase tracking-[0.16em] text-slate-500">{stat.label}</p>
       <p className="mt-3.5 flex items-baseline gap-1">
-        <span className={`tabular font-mono text-stat font-semibold ${TONE[stat.tone ?? "ok"]}`}>{stat.value}</span>
+        <span className="tabular font-mono text-stat font-semibold text-slate-100">{stat.value}</span>
         {stat.unit && <span className="font-mono text-xl text-slate-500">{stat.unit}</span>}
       </p>
       <p className="mt-3.5 text-[0.82rem] leading-relaxed text-slate-500">{stat.detail}</p>
@@ -68,10 +64,10 @@ export function Results() {
       </div>
 
       {/* The negative result gets its own full-width card and equal visual weight. */}
-      <div className="mt-4 overflow-hidden rounded-lg border border-status-warn/25 bg-status-warn/[0.035]">
-        <div className="flex items-center gap-2.5 border-b border-status-warn/20 px-5 py-3">
-          <span className="h-1.5 w-1.5 rounded-full bg-status-warn" />
-          <h3 className="font-mono text-[0.72rem] uppercase tracking-[0.18em] text-status-warn">
+      <div className="mt-4 overflow-hidden rounded-lg border border-ink-600 bg-ink-900/70">
+        <div className="flex items-center gap-2.5 border-b border-ink-700 px-5 py-3">
+          <span className="h-1.5 w-1.5 rounded-full bg-status-warn/70" />
+          <h3 className="font-mono text-[0.72rem] uppercase tracking-[0.18em] text-slate-300">
             {NEGATIVE_RESULT.title}
           </h3>
         </div>
@@ -111,14 +107,14 @@ export function Results() {
             <ol className="mt-4 space-y-3.5">
               {NEGATIVE_RESULT.diagnosis.map((d, i) => (
                 <li key={i} className="flex gap-3.5">
-                  <span className="tabular mt-px shrink-0 font-mono text-[0.7rem] text-status-warn/70">
+                  <span className="tabular mt-px shrink-0 font-mono text-[0.7rem] text-slate-600">
                     {String(i + 1).padStart(2, "0")}
                   </span>
                   <span className="text-[0.86rem] leading-relaxed text-slate-400">{d}</span>
                 </li>
               ))}
             </ol>
-            <p className="mt-5 border-l-2 border-status-warn/40 pl-4 text-[0.86rem] leading-relaxed text-slate-300">
+            <p className="mt-5 border-l-2 border-ink-600 pl-4 text-[0.86rem] leading-relaxed text-slate-300">
               {NEGATIVE_RESULT.conclusion}
             </p>
           </div>
@@ -171,29 +167,6 @@ export function Dashboard() {
       <div className="grid gap-4 md:grid-cols-2">
         {DASHBOARD_SHOTS.map((s) => (
           <Shot key={s.title} shot={s} />
-        ))}
-      </div>
-    </Section>
-  );
-}
-
-export function Decisions() {
-  return (
-    <Section
-      id="decisions"
-      eyebrow="engineering decisions"
-      title="Decisions worth explaining"
-      intro="The parts where the obvious implementation was wrong, and why."
-    >
-      <div className="grid gap-4 md:grid-cols-2">
-        {DECISIONS.map((d) => (
-          <article key={d.title} className="card flex flex-col p-5 transition-colors hover:border-ink-600">
-            <span className="w-fit rounded border border-ink-700 bg-ink-850 px-2 py-0.5 font-mono text-[0.62rem] uppercase tracking-wider text-accent/70">
-              {d.tag}
-            </span>
-            <h3 className="mt-3.5 font-mono text-[0.95rem] font-medium leading-snug text-slate-100">{d.title}</h3>
-            <p className="mt-2.5 text-[0.85rem] leading-relaxed text-slate-400">{d.body}</p>
-          </article>
         ))}
       </div>
     </Section>

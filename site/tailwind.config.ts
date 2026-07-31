@@ -14,17 +14,21 @@ const config: Config = {
           700: "#1c222a",
           600: "#272f3a",
         },
-        // Restrained single accent. Everything else is status color.
+        // Muted slate-blue. Deliberately low-saturation — this is a tool, not
+        // a product launch, and the numbers should carry the page, not the hue.
         accent: {
-          DEFAULT: "#5eead4",
-          dim: "#2dd4bf",
-          deep: "#0f766e",
+          DEFAULT: "#7d9bc1",
+          dim: "#5f7fa6",
+          deep: "#3d5878",
         },
+        // Status colors are desaturated to match, but stay far enough apart in
+        // hue and lightness to remain distinguishable, including for the most
+        // common forms of color blindness.
         status: {
-          ok: "#4ade80",
-          warn: "#fbbf24",
-          bad: "#f87171",
-          info: "#60a5fa",
+          ok: "#6d9e78",
+          warn: "#c2a25e",
+          bad: "#c07a72",
+          info: "#7d9bc1",
         },
       },
       fontFamily: {
@@ -32,7 +36,9 @@ const config: Config = {
         mono: ["var(--font-mono)", "ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
       },
       fontSize: {
-        stat: ["clamp(2.5rem, 6vw, 4.25rem)", { lineHeight: "0.95", letterSpacing: "-0.03em" }],
+        // Sized so a range like "4.47–5.05" fits on one line in a quarter-width
+        // card — wrapping mid-figure reads as broken rather than emphatic.
+        stat: ["clamp(1.75rem, 2.6vw, 2.5rem)", { lineHeight: "1.05", letterSpacing: "-0.02em" }],
       },
       keyframes: {
         "row-in": {
