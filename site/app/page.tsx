@@ -37,9 +37,12 @@ export default function Page() {
 
           <h1 className="mt-5 text-4xl font-semibold tracking-tight text-slate-50 sm:text-6xl">{HERO.name}</h1>
 
-          <p className="mt-5 max-w-3xl text-lg leading-relaxed text-slate-300 sm:text-xl">{HERO.pitch}</p>
+          {/* Plain language first, then the precise technical framing. */}
+          <p className="mt-5 max-w-3xl text-lg leading-relaxed text-slate-200 sm:text-xl">{HERO.plain}</p>
 
-          <p className="mt-4 max-w-3xl text-[0.95rem] leading-relaxed text-slate-500">{HERO.subline}</p>
+          <p className="mt-4 max-w-3xl text-[0.95rem] leading-relaxed text-slate-400">{HERO.pitch}</p>
+
+          <p className="mt-3 max-w-3xl text-[0.95rem] leading-relaxed text-slate-500">{HERO.subline}</p>
 
           <div className="mt-8 flex flex-wrap items-center gap-3">
             <a
@@ -56,18 +59,43 @@ export default function Page() {
               className="inline-flex items-center gap-2 rounded-md border border-accent/40 bg-accent/10 px-4 py-2.5 text-sm font-medium text-accent transition-colors hover:bg-accent/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
             >
               <span className="h-1.5 w-1.5 rounded-full bg-accent" />
-              Live demo
+              Try the live demo
             </a>
+            <span className="text-[0.8rem] text-slate-500">
+              — break it yourself, in the browser
+            </span>
           </div>
 
-          <div className="mt-4 flex flex-wrap gap-x-3 gap-y-2 font-mono text-[0.7rem] text-slate-600">
+          {/*
+            Headline evidence sits above the architecture diagram on purpose.
+            The diagram is a wall of boxes to a non-engineer, and it was the
+            first thing after the hero — putting three legible numbers here
+            means a skimmer gets the point before deciding whether to scroll.
+          */}
+          <dl className="mt-10 grid gap-x-10 gap-y-6 border-t border-ink-800 pt-7 sm:grid-cols-3">
+            {HERO.highlights.map((h) => (
+              <div key={h.figure}>
+                <dt className="flex items-baseline gap-2">
+                  <span className="tabular font-mono text-3xl font-semibold text-slate-100">{h.figure}</span>
+                  <span className="text-[0.85rem] text-slate-300">{h.label}</span>
+                </dt>
+                <dd className="mt-1.5 text-[0.8rem] leading-relaxed text-slate-500">{h.detail}</dd>
+              </div>
+            ))}
+          </dl>
+
+          <div className="mt-8 flex flex-wrap gap-x-3 gap-y-2 font-mono text-[0.7rem] text-slate-600">
             {HERO.stack.map((s) => (
               <span key={s}>{s}</span>
             ))}
           </div>
 
           <div className="mt-14 rounded-lg border border-ink-800 bg-ink-900/50 p-4 sm:p-7">
-            <p className="eyebrow mb-5">request path</p>
+            <p className="eyebrow">request path</p>
+            <p className="mb-6 mt-2 max-w-2xl text-[0.85rem] leading-relaxed text-slate-500">
+              What happens to a single request: it&apos;s authenticated, checked against the team&apos;s rate limit and
+              budget, queued by priority, then sent to a provider — retrying and switching providers if one fails.
+            </p>
             <ArchitectureDiagram />
           </div>
         </div>

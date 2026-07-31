@@ -10,11 +10,36 @@ export const CONTACT_EMAIL = "shashankgundreddy82@gmail.com";
 
 export const HERO = {
   name: "LLM Gateway",
+  /**
+   * Plain-language first. A recruiter's opening question is "what did they
+   * build and was it hard?", and the infrastructure framing below only lands
+   * for someone who already knows why it's hard.
+   */
+  plain:
+    "When a company's apps call AI providers like OpenAI, this sits in the middle and handles what goes wrong: outages, runaway costs, and one team hogging capacity.",
   pitch:
     "A self-hosted API gateway that sits between an org's apps and its LLM providers — the single chokepoint every model call flows through.",
   subline:
     "Without one, every service reimplements provider failover badly, nobody can answer what the company is spending until the invoice arrives, and one team's batch job starves everyone else's user-facing traffic. This builds those once, correctly, and enforces them for everyone.",
   stack: ["FastAPI", "Redis", "Docker", "OpenTelemetry", "Prometheus", "Grafana"],
+  /** Three claims a non-engineer can evaluate, shown right under the fold. */
+  highlights: [
+    {
+      figure: "89%",
+      label: "of requests still succeeded",
+      detail: "during a 30-second outage of a provider, by rerouting to another one mid-request",
+    },
+    {
+      figure: "~5s",
+      label: "to detect and recover",
+      detail: "measured two independent ways that agree within 0.3 seconds",
+    },
+    {
+      figure: "8/8",
+      label: "integration tests pass",
+      detail: "run against the real containerized stack, not mocks in a test harness",
+    },
+  ],
 };
 
 export type Stat = {
